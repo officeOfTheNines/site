@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <title>Members · The Nines</title>
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="apple-touch-icon" href="../favicon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body aria-busy="true">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="site-header-inner">
+      <a class="brand" href="index.html">
+        <img data-logo src="../favicon.png" alt="" width="36" height="36">
+        <span>The Nines</span>
+      </a>
+      <div class="header-actions" data-state="ready" hidden>
+        <a class="button secondary" href="admin.html" data-admin-only hidden>Admin</a>
+        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <noscript>
+      <p class="message error">This page needs JavaScript.</p>
+    </noscript>
+
+    <div data-state="loading" class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Checking your membership…</span>
+    </div>
+
+    <section data-state="denied" class="panel" hidden aria-labelledby="denied-heading">
+      <h1 id="denied-heading">Not on the member list</h1>
+      <p>Your email is not on the member list. Please contact the office.</p>
+      <p class="muted">Signed in as <span data-slot="denied-email"></span></p>
+      <button type="button" class="button" data-action="sign-out">Sign out</button>
+    </section>
+
+    <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
+      <h1 id="error-heading">Something went wrong</h1>
+      <p class="message error" role="alert" data-slot="error-message"></p>
+      <div class="actions">
+        <a class="button" href="index.html">Try again</a>
+        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
+      </div>
+    </section>
+
+    <div data-state="ready" hidden>
+      <h1>Welcome, <span data-slot="name"></span></h1>
+      <p><span class="role-badge" data-slot="role"></span></p>
+
+      <section class="panel">
+        <h2>Member area</h2>
+        <p class="muted">More is coming here soon.</p>
+        <p data-admin-only hidden><a href="admin.html">Manage the member list</a></p>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
+  <script src="../js/config.js"></script>
+  <script src="../js/site.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/members.js"></script>
+</body>
+</html>
