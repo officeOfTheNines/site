@@ -12,19 +12,24 @@ Login and private data live in Supabase.
 project URL and the publishable (anon) key in `js/config.js`. Never add any other Supabase key or a
 database password anywhere in this repo.
 
-## What is here (step 1)
+## What is here (steps 1 and 2)
 
 | File | What it does |
 | --- | --- |
 | `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member login". |
 | `login.html` | Sign in with Google, email and password (sign in, create account, forgot password), or an emailed sign-in link. |
-| `members/index.html` | Member home: "Welcome, name", role, sign out. Placeholder for later steps. |
-| `members/admin.html` | Admins only: see, add and remove allowed emails. |
+| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
+| `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
+| `members/profile.html` | Edit your own profile. Admins open it as `profile.html?member=<id>` to edit someone else's. |
+| `members/admin.html` | Admins only: add and remove allowed emails; edit any profile; hide or show someone in the directory. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
-| `js/login.js`, `js/members.js`, `js/admin.js` | Page scripts. |
+| `js/nav.js` | The shared top bar on every members page (Home, Directory, Map, Admin, Sign out). |
+| `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
+| `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
-| `supabase/schema.sql` | Tables, security rules, helper functions and the first two admins. |
+| `supabase/schema.sql` | The complete schema for a new project: tables, security rules, helper functions, the headshots storage bucket and the first two admins. |
+| `supabase/migrations/` | One file per step, to upgrade a project that is already running. |
 | `CNAME` | Custom domain `site.thenines.club` for GitHub Pages. |
 
 ### How access works
@@ -38,6 +43,32 @@ database password anywhere in this repo.
 4. The publishable (anon) key on its own must not be able to read any table or call any function.
    `schema.sql` grants nothing to the `anon` role.
 
+### Directory entries (step 2)
+
+- Each person in the directory has one entry in the `members` table (one per email, and the email must be
+  on the member list). An entry is created either by an admin ("Add a member to the directory" on the
+  admin page) or automatically the first time someone on the list signs in.
+- An entry has its own id and a link to a login (`user_id`), which stays empty until the person signs in.
+  When they first sign in with the **same, confirmed** email, the database links the entry to their login.
+  From then on they can edit that entry and its profile, and nobody else's. If no entry exists yet, one is
+  created for them.
+- An unconfirmed account cannot claim an entry. Supabase only confirms an email once its owner has clicked
+  the link in it, or when they sign in with Google.
+
+### Directory privacy (step 2)
+
+- Members only see other members through the database function `directory()`. It returns listed members
+  only, and includes someone's email or phone **only** when that member ticked "Show my email" / "Show my
+  phone number". Both are off until the member chooses.
+- Ordinary members can read only their **own** row in `members` and `profiles`, so they cannot look up
+  other people's email or phone directly. Admins can read and edit everything.
+- Headshots are in a **private** storage bucket called `headshots`, one file per member at
+  `<member id>/avatar.jpg`. Members can view all headshots but can only upload, replace or delete their own.
+  The site shows photos through signed links that stop working after one hour.
+- Photos are cropped to a square, resized to 400 × 400 and saved as JPEG in the browser before upload,
+  which also removes camera details such as location. Files over 5 MB or that are not images are refused.
+- Admins can hide a member from the directory ("Hide" on the admin page) without removing their login.
+
 ## Setup (one-off, done by the office)
 
 ### 1. Run the database schema
@@ -48,6 +79,16 @@ database password anywhere in this repo.
 
 It is safe to run again later: it will not duplicate anything or remove members you have added.
 It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com`.
+
+**Upgrading an existing project:** run only the file for the new step, from `supabase/migrations/`:
+
+| File | What it adds |
+| --- | --- |
+| `migrations/002_directory.sql` | Step 2: directory entries that admins can create before someone signs in, the `profiles` table, the `directory()` function, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. |
+
+These files only add and change rules. They never delete rows, so members you added by hand in Supabase
+stay as they are. Each one is safe to run twice. `schema.sql` always holds the complete, current schema
+(every step together) for setting up a brand-new project.
 
 ### 2. Check the Supabase auth settings
 
@@ -78,12 +119,20 @@ pages show the name "The Nines" without the logo.
 
 1. Sign in as an admin (`office@thenines.club` or `jbsolanet@gmail.com`) and open **Admin** (or go to
    `members/admin.html`).
-2. Type the member's email, choose **Member** (or **Admin**), and press **Add**.
+2. Either:
+   - **Add them with a directory entry (recommended):** under **Member profiles → Add a member to the
+     directory**, type their email and display name and press **Add and edit profile**. The email goes on
+     the member list too. You then land on their profile and can add a bio, phone, photo and choices.
+     They appear in the directory straight away.
+   - **Or give login access only:** under **Add an email**, type their email, choose **Member** (or
+     **Admin**) and press **Add**. They get a directory entry when they first sign in. Use this to make
+     someone an admin.
 3. Tell the member to go to the site and choose **Member login**. They can use Google if that email is a
    Google account, or create an account with a password, or ask for a sign-in link. They must use the same
-   email address that is on the list.
+   email address that is on the list. Their entry then becomes theirs to edit.
 
-To remove someone, press **Remove** next to their email. They lose access straight away, and their member profile is deleted (it comes back if they are added again and log in).
+To remove someone, press **Remove** next to their email. They lose access straight away, and their
+directory entry and profile are deleted. They do not come back by themselves if the email is added again.
 You cannot remove yourself, and the last admin cannot be removed or demoted. The database blocks both.
 To change someone's role, remove them and add them again with the new role.
 
@@ -124,6 +173,55 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 - [ ] **Google sign-in, email confirmation, password reset and emailed sign-in links work end to end.**
   Could not run: needs the live project and real email.
 
+#### Step 2: directory, profiles, headshots, navigation
+
+- [ ] **An admin can create a directory entry and profile for someone who has not signed in yet; when that
+  person signs in with the same confirmed email, the entry becomes theirs, with no duplicate.** Ran: locally
+  (an unconfirmed account is not linked; a confirmed one is linked to the admin's entry and keeps the
+  admin's display name; it can then edit only that entry) and in Chromium (the admin form, the duplicate
+  message, and saving the new profile). To do: live.
+- [ ] **Upgrading a running step 1 project keeps every allowlist entry and member.** Ran: locally with
+  hand-added addresses (all kept; existing members linked to their logins; the result is identical to a
+  fresh project). To do: live, by comparing `select count(*) from allowed_emails;` before and after.
+- [ ] **A member sees the directory and can edit only their own profile.** Ran: locally (a member's
+  insert or update for someone else is rejected; trying to hide themselves is ignored) and in Chromium
+  (opening `profile.html?member=<someone else>` as a member shows "Admins only"). To do: live.
+- [ ] **A member with "Show my email" off has no email in the directory response, even through the API with
+  the publishable key and a member's login.** Ran: locally (`directory()` returns null email and phone
+  while the flags are off). To do: live, with the SQL below or a browser's network tab.
+- [ ] **Members can no longer read other people's email or phone from `members` or `profiles`.** Ran:
+  locally (a member gets only their own row from each table; admins get all). To do: live.
+- [ ] **Turning a flag on makes that detail appear, and turning it off removes it.** Ran: locally and in
+  the profile preview. To do: live.
+- [ ] **A headshot upload works, is resized, and shows through an expiring link.** Ran: in Chromium (a
+  1200 × 800 image is uploaded as a 400 × 400 JPEG with no camera data, to `<own id>/avatar.jpg`; links are
+  requested for 3600 seconds). To do: live, including checking the link stops working after an hour.
+- [ ] **A member cannot overwrite or delete someone else's headshot.** Ran: locally against the storage
+  rules (upload to another folder or any other file name is rejected; update and delete of another member's
+  file affect nothing). To do: live.
+- [ ] **An address not on the list, or a logged-out visitor, gets nothing from the directory or the
+  bucket.** Ran: locally (anon: permission denied; outsider: zero rows and zero files). To do: live, with
+  the commands below.
+- [ ] **Admins can edit any profile and hide someone from the directory without removing their login.**
+  Ran: locally and in Chromium. To do: live.
+- [ ] **The navigation bar shows Admin only to admins, highlights the current page, collapses to a menu on
+  phones, and Map opens the public map in a new tab.** Ran: in Chromium. To do: live.
+
+#### Seeing the directory as a particular member (SQL editor)
+
+Replace the id with a real login id from `select user_id, email from public.members where user_id is not null;`.
+Nothing is changed.
+
+```sql
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', 'PUT-LOGIN-ID-HERE', 'role', 'authenticated')::text, true);
+select display_name, email, phone from public.directory();  -- email/phone only where that person opted in
+select email from public.members;                          -- only this member's own row
+select member_id, phone from public.profiles;              -- only this member's own row
+rollback;
+```
+
 ### Checking that the anon key can see nothing
 
 Run these from any terminal. Each should fail with a permission error (HTTP 401 or 403, or a message
@@ -144,6 +242,16 @@ curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/my_access"
 ```bash
 curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/is_member" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{}"
 ```
+
+```bash
+curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/directory" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{}"
+```
+
+```bash
+curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/storage/v1/object/list/headshots" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{\"prefix\":\"\"}"
+```
+
+The last one should return an error or an empty list `[]`, never file names.
 
 You can also check in the SQL editor that `anon` has no privileges:
 
@@ -166,3 +274,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.
 - Text from the database is always inserted with `textContent`, never `innerHTML`.
+- The members top bar is built by `js/nav.js`. To add a page to it in a later step, add one line to the
+  `LINKS` list at the top of that file and put `<header class="site-header" data-nav="<key>"></header>`
+  on the new page.
+- Removing an email from the list deletes that person's `members` and `profiles` rows, but their headshot
+  file stays in the bucket (Supabase does not allow deleting storage files from SQL). Members cannot see it
+  without a profile pointing to it. To tidy up, delete the folder in **Storage → headshots**.

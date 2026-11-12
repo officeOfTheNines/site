@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://bfblobnjrhcacwoqszwh.supabase.co; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <title>Profile · The Nines</title>
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="apple-touch-icon" href="../favicon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body aria-busy="true">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" data-nav="profile"></header>
+
+  <main id="main">
+    <noscript>
+      <p class="message error">This page needs JavaScript.</p>
+    </noscript>
+
+    <div data-state="loading" class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Loading your profile…</span>
+    </div>
+
+    <section data-state="denied" class="panel" hidden aria-labelledby="denied-heading">
+      <h1 id="denied-heading">Not on the member list</h1>
+      <p>Your email is not on the member list. Please contact the office.</p>
+      <p class="muted">Signed in as <span data-slot="denied-email"></span></p>
+      <button type="button" class="button" data-action="sign-out">Sign out</button>
+    </section>
+
+    <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
+      <h1 id="error-heading">Something went wrong</h1>
+      <p class="message error" role="alert" data-slot="error-message"></p>
+      <div class="actions">
+        <a class="button" href="profile.html">Try again</a>
+        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
+      </div>
+    </section>
+
+    <section data-state="not-admin" class="panel" hidden aria-labelledby="not-admin-heading">
+      <h1 id="not-admin-heading">Admins only</h1>
+      <p>Only club admins can edit another member's profile.</p>
+      <a class="button" href="profile.html">Edit my own profile</a>
+    </section>
+
+    <section data-state="not-found" class="panel" hidden aria-labelledby="not-found-heading">
+      <h1 id="not-found-heading">Member not found</h1>
+      <p>That member has not logged in yet, or is no longer on the list.</p>
+      <a class="button" href="admin.html">Back to admin</a>
+    </section>
+
+    <div data-state="ready" hidden>
+      <div class="page-head">
+        <h1 id="profile-heading">My profile</h1>
+        <a class="button secondary" id="back-link" href="directory.html">Back to the directory</a>
+      </div>
+      <p class="muted" id="profile-intro">This is what other members see in the directory. Your bio is for members only.</p>
+
+      <div class="profile-layout">
+        <form id="profile-form" class="panel" novalidate aria-labelledby="profile-heading">
+          <div id="form-error" class="message error" role="alert"></div>
+          <div id="form-status" class="message success" role="status" aria-live="polite"></div>
+
+          <div class="field">
+            <label for="display-name">Display name <span class="muted">(required)</span></label>
+            <input id="display-name" type="text" maxlength="80" autocomplete="name" required>
+          </div>
+
+          <div class="field">
+            <label for="bio">Short bio <span class="muted">(optional)</span></label>
+            <textarea id="bio" rows="5" maxlength="500" aria-describedby="bio-count"></textarea>
+            <p id="bio-count" class="hint">0 of 500 characters</p>
+          </div>
+
+          <div class="field">
+            <label for="phone">Phone <span class="muted">(optional)</span></label>
+            <input id="phone" type="tel" autocomplete="tel" maxlength="30" inputmode="tel" aria-describedby="phone-hint">
+            <p id="phone-hint" class="hint">Digits, spaces and + ( ) - . only, for example +44 7700 900123.</p>
+          </div>
+
+          <fieldset class="field">
+            <legend>Headshot <span class="muted">(optional)</span></legend>
+            <div class="photo-row">
+              <div id="photo-preview" class="photo-preview" aria-live="polite"></div>
+              <div class="photo-actions">
+                <label class="button secondary file-button" for="photo-input">Choose a photo</label>
+                <input id="photo-input" class="visually-hidden" type="file" accept="image/*" aria-describedby="photo-hint">
+                <button type="button" class="button link" id="photo-remove" hidden>Remove photo</button>
+              </div>
+            </div>
+            <p id="photo-hint" class="hint">JPEG, PNG or similar, up to 5 MB. It is cropped to a square and resized before upload, and camera details such as location are removed.</p>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>What other members can see</legend>
+            <label class="check">
+              <input id="show-email" type="checkbox">
+              <span><span id="show-email-text">Show my email to other members</span> <span class="muted" id="email-shown"></span></span>
+            </label>
+            <label class="check">
+              <input id="show-phone" type="checkbox">
+              <span id="show-phone-text">Show my phone number to other members</span>
+            </label>
+            <label class="check" id="listed-row" hidden>
+              <input id="listed" type="checkbox">
+              <span>Listed in the directory <span class="muted">(admins only: untick to hide this member without removing their login)</span></span>
+            </label>
+          </fieldset>
+
+          <button type="submit" class="button" id="save-button">Save profile</button>
+        </form>
+
+        <section class="panel preview-panel" aria-labelledby="preview-heading">
+          <h2 id="preview-heading">Preview</h2>
+          <p class="muted small">How this card looks to other members.</p>
+          <div id="card-preview"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
+  <script src="../js/config.js"></script>
+  <script src="../js/nav.js"></script>
+  <script src="../js/site.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/people.js"></script>
+  <script src="../js/profile.js"></script>
+</body>
+</html>

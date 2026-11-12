@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://bfblobnjrhcacwoqszwh.supabase.co; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
   <title>Admin · The Nines</title>
   <link rel="icon" href="../favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="../favicon.png">
@@ -17,18 +17,7 @@
 <body aria-busy="true">
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="site-header-inner">
-      <a class="brand" href="index.html">
-        <img data-logo src="../favicon.png" alt="" width="36" height="36">
-        <span>The Nines</span>
-      </a>
-      <div class="header-actions">
-        <a class="button secondary" href="index.html" data-state="ready" hidden>Member home</a>
-        <button type="button" class="button secondary" data-action="sign-out" data-state="ready" hidden>Sign out</button>
-      </div>
-    </div>
-  </header>
+  <header class="site-header" data-nav="admin"></header>
 
   <main id="main">
     <noscript>
@@ -47,12 +36,6 @@
       <button type="button" class="button" data-action="sign-out">Sign out</button>
     </section>
 
-    <section data-state="not-admin" class="panel" hidden aria-labelledby="not-admin-heading">
-      <h1 id="not-admin-heading">Admins only</h1>
-      <p>This page is for club admins.</p>
-      <a class="button" href="index.html">Go to the member home</a>
-    </section>
-
     <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
       <h1 id="error-heading">Something went wrong</h1>
       <p class="message error" role="alert" data-slot="error-message"></p>
@@ -60,6 +43,12 @@
         <a class="button" href="admin.html">Try again</a>
         <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
       </div>
+    </section>
+
+    <section data-state="not-admin" class="panel" hidden aria-labelledby="not-admin-heading">
+      <h1 id="not-admin-heading">Admins only</h1>
+      <p>This page is for club admins.</p>
+      <a class="button" href="index.html">Go to the member home</a>
     </section>
 
     <div data-state="ready" hidden>
@@ -105,11 +94,53 @@
           <tbody id="allowlist-body"></tbody>
         </table>
       </section>
+
+      <section class="panel" aria-labelledby="profiles-heading">
+        <h2 id="profiles-heading">Member profiles</h2>
+        <p class="muted">Everyone with a directory entry. People get one when they first sign in, or when you
+          add them here. Hiding someone removes their card from the directory but keeps their login and their
+          place on the list.</p>
+
+        <form id="new-member-form" class="add-form new-member-form" novalidate aria-labelledby="new-member-heading">
+          <h3 id="new-member-heading" class="form-title">Add a member to the directory</h3>
+          <div class="field">
+            <label for="new-member-email">Email</label>
+            <input id="new-member-email" type="email" autocomplete="off" inputmode="email" required aria-describedby="new-member-hint">
+          </div>
+          <div class="field">
+            <label for="new-member-name">Display name</label>
+            <input id="new-member-name" type="text" maxlength="80" autocomplete="off" required>
+          </div>
+          <button type="submit" class="button" id="new-member-submit">Add and edit profile</button>
+          <p id="new-member-hint" class="hint form-hint">The email is added to the member list too, if it is not
+            there yet. When this person signs in with that email, the entry becomes theirs to edit.</p>
+        </form>
+
+        <div id="profiles-error" class="message error" role="alert"></div>
+        <div id="profiles-status" class="message success" role="status" aria-live="polite"></div>
+        <p id="profiles-loading" class="muted">Loading…</p>
+        <p id="profiles-empty" class="muted" hidden>No directory entries yet.</p>
+        <table class="allowlist" id="profiles-table" hidden>
+          <caption id="profiles-caption"></caption>
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Email</th>
+              <th scope="col">Signed in</th>
+              <th scope="col">Profile</th>
+              <th scope="col">Directory</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="profiles-body"></tbody>
+        </table>
+      </section>
     </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
   <script src="../js/config.js"></script>
+  <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/admin.js"></script>
