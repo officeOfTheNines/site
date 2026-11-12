@@ -204,8 +204,11 @@
   }
 
   async function load(access) {
-    var myId = access.session.user.id;
+    var myId = access.member && access.member.id;
     var param = new URLSearchParams(window.location.search).get('member');
+    if (!myId && !param) {
+      throw new Error('Your directory entry could not be set up. Please contact the office.');
+    }
     state.isAdmin = access.role === 'admin';
     state.targetId = param || myId;
     state.editingOther = state.targetId !== myId;
@@ -213,7 +216,7 @@
     if (state.editingOther && !state.isAdmin) { N.showState('not-admin'); return; }
     if (!UUID_RE.test(state.targetId)) { N.showState('not-found'); return; }
 
-    var memberResult = await client.from('members').select('id, display_name, email').eq('id', state.targetId).maybeSingle();
+    var memberResult = await client.from('members').select('id, display_name, email, user_id').eq('id', state.targetId).maybeSingle();
     if (memberResult.error) throw memberResult.error;
     if (!memberResult.data) { N.showState('not-found'); return; }
 
@@ -254,7 +257,12 @@
       document.getElementById('profile-heading').textContent = 'Edit profile: ' + who;
       document.title = 'Edit profile · The Nines';
       document.getElementById('profile-intro').textContent =
-        'You are editing another member\'s profile as an admin. Changes show in the directory straight away.';
+        'You are editing another member\'s profile as an admin. Changes show in the directory straight away.' +
+        (member.user_id ? '' : ' ' + (member.email || 'This person') + ' has not signed in yet. When they sign in with ' +
+          'that email, they can edit this profile themselves.');
+      if (new URLSearchParams(window.location.search).get('new') === '1') {
+        showStatus('Directory entry created for ' + who + '. Add a bio, phone or photo below, or leave it as it is.');
+      }
       var back = document.getElementById('back-link');
       back.textContent = 'Back to admin';
       back.setAttribute('href', 'admin.html');

@@ -540,6 +540,20 @@ fieldset.field legend { font-weight: 500; margin-bottom: 8px; }
   .row-actions { justify-content: flex-start; }
 }
 
+.new-member-form {
+  grid-template-columns: 1fr 1fr auto;
+  margin: 8px 0 24px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.new-member-form .form-title,
+.new-member-form .form-hint { grid-column: 1 / -1; margin: 0; }
+.form-title { font-family: var(--font-body); font-size: 1.05rem; font-weight: 600; }
+@media (max-width: 640px) {
+  .new-member-form { grid-template-columns: 1fr; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

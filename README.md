@@ -43,6 +43,18 @@ database password anywhere in this repo.
 4. The publishable (anon) key on its own must not be able to read any table or call any function.
    `schema.sql` grants nothing to the `anon` role.
 
+### Directory entries (step 2)
+
+- Each person in the directory has one entry in the `members` table (one per email, and the email must be
+  on the member list). An entry is created either by an admin ("Add a member to the directory" on the
+  admin page) or automatically the first time someone on the list signs in.
+- An entry has its own id and a link to a login (`user_id`), which stays empty until the person signs in.
+  When they first sign in with the **same, confirmed** email, the database links the entry to their login.
+  From then on they can edit that entry and its profile, and nobody else's. If no entry exists yet, one is
+  created for them.
+- An unconfirmed account cannot claim an entry. Supabase only confirms an email once its owner has clicked
+  the link in it, or when they sign in with Google.
+
 ### Directory privacy (step 2)
 
 - Members only see other members through the database function `directory()`. It returns listed members
@@ -72,7 +84,7 @@ It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com
 
 | File | What it adds |
 | --- | --- |
-| `migrations/002_directory.sql` | Step 2: the `profiles` table, the `directory()` function, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. |
+| `migrations/002_directory.sql` | Step 2: directory entries that admins can create before someone signs in, the `profiles` table, the `directory()` function, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. |
 
 These files only add and change rules. They never delete rows, so members you added by hand in Supabase
 stay as they are. Each one is safe to run twice. `schema.sql` always holds the complete, current schema
@@ -107,12 +119,20 @@ pages show the name "The Nines" without the logo.
 
 1. Sign in as an admin (`office@thenines.club` or `jbsolanet@gmail.com`) and open **Admin** (or go to
    `members/admin.html`).
-2. Type the member's email, choose **Member** (or **Admin**), and press **Add**.
+2. Either:
+   - **Add them with a directory entry (recommended):** under **Member profiles → Add a member to the
+     directory**, type their email and display name and press **Add and edit profile**. The email goes on
+     the member list too. You then land on their profile and can add a bio, phone, photo and choices.
+     They appear in the directory straight away.
+   - **Or give login access only:** under **Add an email**, type their email, choose **Member** (or
+     **Admin**) and press **Add**. They get a directory entry when they first sign in. Use this to make
+     someone an admin.
 3. Tell the member to go to the site and choose **Member login**. They can use Google if that email is a
    Google account, or create an account with a password, or ask for a sign-in link. They must use the same
-   email address that is on the list.
+   email address that is on the list. Their entry then becomes theirs to edit.
 
-To remove someone, press **Remove** next to their email. They lose access straight away, and their member profile is deleted (it comes back if they are added again and log in).
+To remove someone, press **Remove** next to their email. They lose access straight away, and their
+directory entry and profile are deleted. They do not come back by themselves if the email is added again.
 You cannot remove yourself, and the last admin cannot be removed or demoted. The database blocks both.
 To change someone's role, remove them and add them again with the new role.
 
@@ -155,6 +175,14 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 
 #### Step 2: directory, profiles, headshots, navigation
 
+- [ ] **An admin can create a directory entry and profile for someone who has not signed in yet; when that
+  person signs in with the same confirmed email, the entry becomes theirs, with no duplicate.** Ran: locally
+  (an unconfirmed account is not linked; a confirmed one is linked to the admin's entry and keeps the
+  admin's display name; it can then edit only that entry) and in Chromium (the admin form, the duplicate
+  message, and saving the new profile). To do: live.
+- [ ] **Upgrading a running step 1 project keeps every allowlist entry and member.** Ran: locally with
+  hand-added addresses (all kept; existing members linked to their logins; the result is identical to a
+  fresh project). To do: live, by comparing `select count(*) from allowed_emails;` before and after.
 - [ ] **A member sees the directory and can edit only their own profile.** Ran: locally (a member's
   insert or update for someone else is rejected; trying to hide themselves is ignored) and in Chromium
   (opening `profile.html?member=<someone else>` as a member shows "Admins only"). To do: live.
@@ -181,12 +209,13 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 
 #### Seeing the directory as a particular member (SQL editor)
 
-Replace the id with a real one from `select id, email from public.members;`. Nothing is changed.
+Replace the id with a real login id from `select user_id, email from public.members where user_id is not null;`.
+Nothing is changed.
 
 ```sql
 begin;
 set local role authenticated;
-select set_config('request.jwt.claims', json_build_object('sub', 'PUT-MEMBER-ID-HERE', 'role', 'authenticated')::text, true);
+select set_config('request.jwt.claims', json_build_object('sub', 'PUT-LOGIN-ID-HERE', 'role', 'authenticated')::text, true);
 select display_name, email, phone from public.directory();  -- email/phone only where that person opted in
 select email from public.members;                          -- only this member's own row
 select member_id, phone from public.profiles;              -- only this member's own row

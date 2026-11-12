@@ -138,7 +138,8 @@
   }
 
   // Works out who the visitor is and what they may see.
-  // Returns { session, role, member } where role is 'admin', 'member' or null.
+  // Returns { session, role, member } where role is 'admin', 'member' or null,
+  // and member is their directory entry { id, display_name, email } (or null).
   async function loadAccess() {
     var sessionResult = await client.auth.getSession();
     if (sessionResult.error) throw sessionResult.error;
@@ -153,10 +154,11 @@
     var claim = await client.rpc('claim_membership');
     if (claim.error) throw claim.error;
 
+    // The caller's directory entry (it may have been created by an admin before their first login).
     var me = await client
       .from('members')
-      .select('display_name, email')
-      .eq('id', session.user.id)
+      .select('id, display_name, email')
+      .eq('user_id', session.user.id)
       .maybeSingle();
     if (me.error) throw me.error;
 

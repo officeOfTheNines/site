@@ -97,18 +97,36 @@
 
       <section class="panel" aria-labelledby="profiles-heading">
         <h2 id="profiles-heading">Member profiles</h2>
-        <p class="muted">People appear here after their first login. Hiding someone removes their card from the
-          directory but keeps their login and their place on the list.</p>
+        <p class="muted">Everyone with a directory entry. People get one when they first sign in, or when you
+          add them here. Hiding someone removes their card from the directory but keeps their login and their
+          place on the list.</p>
+
+        <form id="new-member-form" class="add-form new-member-form" novalidate aria-labelledby="new-member-heading">
+          <h3 id="new-member-heading" class="form-title">Add a member to the directory</h3>
+          <div class="field">
+            <label for="new-member-email">Email</label>
+            <input id="new-member-email" type="email" autocomplete="off" inputmode="email" required aria-describedby="new-member-hint">
+          </div>
+          <div class="field">
+            <label for="new-member-name">Display name</label>
+            <input id="new-member-name" type="text" maxlength="80" autocomplete="off" required>
+          </div>
+          <button type="submit" class="button" id="new-member-submit">Add and edit profile</button>
+          <p id="new-member-hint" class="hint form-hint">The email is added to the member list too, if it is not
+            there yet. When this person signs in with that email, the entry becomes theirs to edit.</p>
+        </form>
+
         <div id="profiles-error" class="message error" role="alert"></div>
         <div id="profiles-status" class="message success" role="status" aria-live="polite"></div>
         <p id="profiles-loading" class="muted">Loading…</p>
-        <p id="profiles-empty" class="muted" hidden>Nobody has logged in yet.</p>
+        <p id="profiles-empty" class="muted" hidden>No directory entries yet.</p>
         <table class="allowlist" id="profiles-table" hidden>
           <caption id="profiles-caption"></caption>
           <thead>
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Email</th>
+              <th scope="col">Signed in</th>
               <th scope="col">Profile</th>
               <th scope="col">Directory</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>

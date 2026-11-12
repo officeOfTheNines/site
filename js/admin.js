@@ -160,7 +160,7 @@
   function showProfilesStatus(text) { profilesError.textContent = ''; profilesStatus.textContent = text || ''; }
 
   async function loadProfiles() {
-    var members = await client.from('members').select('id, display_name, email, last_login');
+    var members = await client.from('members').select('id, display_name, email, user_id, last_login');
     if (members.error) throw members.error;
     var profiles = await client.from('profiles').select('member_id, listed, updated_on');
     if (profiles.error) throw profiles.error;
@@ -205,14 +205,19 @@
       profilesBody.appendChild(el('tr', null, [
         el('td', { 'data-label': 'Name', text: name }),
         el('td', { className: 'email', 'data-label': 'Email', text: m.email || '' }),
+        el('td', { 'data-label': 'Signed in', text: m.user_id ? (formatDate(m.last_login) || 'Yes') : 'Not yet' }),
         el('td', { 'data-label': 'Profile', text: p ? 'Filled in' : 'Not yet' }),
         el('td', { 'data-label': 'Directory', text: isListed ? 'Listed' : 'Hidden' }),
         el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [edit, toggle])])
       ]));
     });
 
-    profilesCaption.textContent = list.length + (list.length === 1 ? ' member has' : ' members have') +
-      ' logged in' + (hidden ? ' (' + hidden + ' hidden from the directory)' : '');
+    var notSignedIn = list.filter(function (e) { return !e.member.user_id; }).length;
+    var notes = [];
+    if (notSignedIn) notes.push(notSignedIn + ' not signed in yet');
+    if (hidden) notes.push(hidden + ' hidden from the directory');
+    profilesCaption.textContent = list.length + (list.length === 1 ? ' directory entry' : ' directory entries') +
+      (notes.length ? ' (' + notes.join(', ') + ')' : '');
     profilesLoading.hidden = true;
     profilesEmpty.hidden = list.length > 0;
     profilesTable.hidden = list.length === 0;
@@ -233,6 +238,53 @@
     }
     refreshProfiles();
   }
+
+  // ---- Add a member to the directory (before they have signed in) ----
+
+  var newForm = document.getElementById('new-member-form');
+  var newEmail = document.getElementById('new-member-email');
+  var newName = document.getElementById('new-member-name');
+  var newSubmit = document.getElementById('new-member-submit');
+
+  newForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var email = newEmail.value.trim().toLowerCase();
+    var name = newName.value.trim();
+    if (!EMAIL_RE.test(email)) { showProfilesError('Please enter a valid email address.'); newEmail.focus(); return; }
+    if (!name) { showProfilesError('Please enter a display name.'); newName.focus(); return; }
+    if (name.length > 80) { showProfilesError('Please keep the display name to 80 characters or fewer.'); newName.focus(); return; }
+
+    newSubmit.disabled = true;
+    showProfilesError('');
+    try {
+      // 1. make sure the email is on the member list (as a member)
+      if (!rows.some(function (r) { return r.email === email; })) {
+        var allow = await client.from('allowed_emails').insert({ email: email, role: 'member' });
+        if (allow.error && allow.error.code !== '23505') throw allow.error;
+      }
+      // 2. create the directory entry, then open it in the profile editor
+      var created = await client.from('members').insert({ email: email, display_name: name }).select('id').single();
+      if (created.error) {
+        if (created.error.code === '23505') {
+          var existing = await client.from('members').select('id').eq('email', email).maybeSingle();
+          showProfilesError(email + ' already has a directory entry.');
+          if (existing.data) {
+            profilesError.appendChild(document.createTextNode(' '));
+            profilesError.appendChild(N.el('a', { href: 'profile.html?member=' + encodeURIComponent(existing.data.id), text: 'Edit it' }));
+          }
+          await loadList();
+          return;
+        }
+        throw created.error;
+      }
+      window.location.href = 'profile.html?member=' + encodeURIComponent(created.data.id) + '&new=1';
+    } catch (error) {
+      showProfilesError('Could not add ' + email + '. ' + dbError(error));
+      await loadList();
+    } finally {
+      newSubmit.disabled = false;
+    }
+  });
 
   function refreshProfiles() {
     return loadProfiles().catch(function (error) {

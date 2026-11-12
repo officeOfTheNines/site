@@ -13,10 +13,11 @@
     N.showState('ready');
 
     // A gentle prompt for members who have not saved a profile yet.
+    if (!access.member) return;
     var result = await N.client
       .from('profiles')
       .select('member_id')
-      .eq('member_id', access.session.user.id)
+      .eq('member_id', access.member.id)
       .maybeSingle();
     if (!result.error && !result.data) {
       document.getElementById('profile-prompt').hidden = false;
