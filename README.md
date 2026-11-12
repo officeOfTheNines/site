@@ -28,7 +28,8 @@ database password anywhere in this repo.
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
-| `supabase/schema.sql` | Tables, security rules, helper functions, the headshots storage bucket and the first two admins. |
+| `supabase/schema.sql` | The complete schema for a new project: tables, security rules, helper functions, the headshots storage bucket and the first two admins. |
+| `supabase/migrations/` | One file per step, to upgrade a project that is already running. |
 | `CNAME` | Custom domain `site.thenines.club` for GitHub Pages. |
 
 ### How access works
@@ -67,9 +68,15 @@ database password anywhere in this repo.
 It is safe to run again later: it will not duplicate anything or remove members you have added.
 It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com`.
 
-**After each new step is merged, run the whole file again.** Step 2 adds the `profiles` table, the
-`directory()` function and the private `headshots` storage bucket with its rules, and tightens who can
-read the `members` table. The last line tells the site's API to pick up the changes straight away.
+**Upgrading an existing project:** run only the file for the new step, from `supabase/migrations/`:
+
+| File | What it adds |
+| --- | --- |
+| `migrations/002_directory.sql` | Step 2: the `profiles` table, the `directory()` function, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. |
+
+These files only add and change rules. They never delete rows, so members you added by hand in Supabase
+stay as they are. Each one is safe to run twice. `schema.sql` always holds the complete, current schema
+(every step together) for setting up a brand-new project.
 
 ### 2. Check the Supabase auth settings
 
