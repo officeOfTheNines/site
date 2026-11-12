@@ -71,10 +71,10 @@
     document.querySelectorAll(selector).forEach(function (node) { node.textContent = text; });
   }
 
-  // Shows the block with data-state="name" and hides all other data-state blocks.
+  // Shows blocks whose data-state includes "name" (space-separated list) and hides the rest.
   function showState(name) {
     document.querySelectorAll('[data-state]').forEach(function (node) {
-      node.hidden = node.getAttribute('data-state') !== name;
+      node.hidden = node.getAttribute('data-state').split(/\s+/).indexOf(name) === -1;
     });
     document.body.setAttribute('aria-busy', name === 'loading' ? 'true' : 'false');
   }

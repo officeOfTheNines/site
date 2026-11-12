@@ -113,6 +113,7 @@
       showStatus(email + ' was removed.');
     }
     await loadList();
+    refreshProfiles();
   }
 
   form.addEventListener('submit', async function (event) {
@@ -144,11 +145,108 @@
     await loadList();
   });
 
+  // ---- Member profiles: edit any profile, hide or show someone in the directory ----
+
+  var profilesError = document.getElementById('profiles-error');
+  var profilesStatus = document.getElementById('profiles-status');
+  var profilesLoading = document.getElementById('profiles-loading');
+  var profilesEmpty = document.getElementById('profiles-empty');
+  var profilesTable = document.getElementById('profiles-table');
+  var profilesBody = document.getElementById('profiles-body');
+  var profilesCaption = document.getElementById('profiles-caption');
+  var collator = new Intl.Collator('en-GB', { sensitivity: 'base' });
+
+  function showProfilesError(text) { profilesStatus.textContent = ''; profilesError.textContent = text || ''; }
+  function showProfilesStatus(text) { profilesError.textContent = ''; profilesStatus.textContent = text || ''; }
+
+  async function loadProfiles() {
+    var members = await client.from('members').select('id, display_name, email, last_login');
+    if (members.error) throw members.error;
+    var profiles = await client.from('profiles').select('member_id, listed, updated_on');
+    if (profiles.error) throw profiles.error;
+
+    var byId = {};
+    (profiles.data || []).forEach(function (p) { byId[p.member_id] = p; });
+    var list = (members.data || []).map(function (m) {
+      return { member: m, profile: byId[m.id] || null };
+    }).sort(function (a, b) {
+      return collator.compare(a.member.display_name || a.member.email || '', b.member.display_name || b.member.email || '');
+    });
+
+    renderProfiles(list);
+  }
+
+  function renderProfiles(list) {
+    var el = N.el;
+    profilesBody.replaceChildren();
+    var hidden = 0;
+
+    list.forEach(function (entry) {
+      var m = entry.member;
+      var p = entry.profile;
+      var isListed = !p || p.listed !== false;
+      if (!isListed) hidden += 1;
+      var name = m.display_name || m.email || 'Member';
+
+      var edit = el('a', {
+        className: 'button secondary',
+        href: 'profile.html?member=' + encodeURIComponent(m.id),
+        'aria-label': 'Edit profile of ' + name,
+        text: 'Edit'
+      });
+      var toggle = el('button', {
+        type: 'button',
+        className: 'button secondary',
+        'aria-label': (isListed ? 'Hide ' : 'Show ') + name + (isListed ? ' from' : ' in') + ' the directory',
+        text: isListed ? 'Hide' : 'Show'
+      });
+      toggle.addEventListener('click', function () { setListed(m, p, !isListed, toggle); });
+
+      profilesBody.appendChild(el('tr', null, [
+        el('td', { 'data-label': 'Name', text: name }),
+        el('td', { className: 'email', 'data-label': 'Email', text: m.email || '' }),
+        el('td', { 'data-label': 'Profile', text: p ? 'Filled in' : 'Not yet' }),
+        el('td', { 'data-label': 'Directory', text: isListed ? 'Listed' : 'Hidden' }),
+        el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [edit, toggle])])
+      ]));
+    });
+
+    profilesCaption.textContent = list.length + (list.length === 1 ? ' member has' : ' members have') +
+      ' logged in' + (hidden ? ' (' + hidden + ' hidden from the directory)' : '');
+    profilesLoading.hidden = true;
+    profilesEmpty.hidden = list.length > 0;
+    profilesTable.hidden = list.length === 0;
+  }
+
+  async function setListed(member, profile, value, button) {
+    button.disabled = true;
+    showProfilesError('');
+    var result = profile
+      ? await client.from('profiles').update({ listed: value }).eq('member_id', member.id).select('member_id')
+      : await client.from('profiles').insert({ member_id: member.id, listed: value }).select('member_id');
+    button.disabled = false;
+    var name = member.display_name || member.email;
+    if (result.error || !result.data || result.data.length !== 1) {
+      showProfilesError('Could not update ' + name + '. ' + (result.error ? dbError(result.error) : 'Please reload and try again.'));
+    } else {
+      showProfilesStatus(name + (value ? ' is now listed in the directory.' : ' is now hidden from the directory.'));
+    }
+    refreshProfiles();
+  }
+
+  function refreshProfiles() {
+    return loadProfiles().catch(function (error) {
+      profilesLoading.hidden = true;
+      showProfilesError('Could not load member profiles. ' + dbError(error));
+    });
+  }
+
   N.guardMembersPage().then(function (access) {
     if (!access) return;
     if (access.role !== 'admin') { N.showState('not-admin'); return; }
     myEmail = (access.session.user.email || '').toLowerCase();
     N.showState('ready');
     loadList();
+    refreshProfiles();
   });
 })();
