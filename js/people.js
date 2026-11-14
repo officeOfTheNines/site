@@ -11,8 +11,8 @@
   var MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
   var PHOTO_SIZE = 400;
 
-  function photoPathFor(memberId) {
-    return memberId + '/avatar.jpg';
+  function photoPathFor(profileId) {
+    return profileId + '/avatar.jpg';
   }
 
   function initials(name) {
@@ -36,7 +36,8 @@
     return map;
   }
 
-  // Builds a member card. person = { display_name, bio, email, phone }, photoUrl = signed link or null.
+  // Builds a member card. person = { display_name, bio, email, phone, former_member, foreign_member },
+  // photoUrl = signed link or null.
   // All text goes in with textContent; links are built from validated values only.
   function renderCard(person, photoUrl, options) {
     var el = N.el;
@@ -64,6 +65,10 @@
     var details = el('div', { className: 'card-body' }, [
       el(opts.headingTag || 'h2', { className: 'card-name', text: name })
     ]);
+    var labels = [];
+    if (person.former_member) labels.push(el('span', { className: 'card-label', text: 'Former member' }));
+    if (person.foreign_member) labels.push(el('span', { className: 'card-label', text: 'Foreign member' }));
+    if (labels.length) details.appendChild(el('p', { className: 'card-labels' }, labels));
     if (person.bio) details.appendChild(el('p', { className: 'card-bio', text: person.bio }));
 
     var contact = el('ul', { className: 'card-contact' });
@@ -133,8 +138,8 @@
     });
   }
 
-  async function uploadPhoto(memberId, blob) {
-    var path = photoPathFor(memberId);
+  async function uploadPhoto(profileId, blob) {
+    var path = photoPathFor(profileId);
     var result = await N.client.storage.from(BUCKET).upload(path, blob, {
       contentType: 'image/jpeg',
       upsert: true,
@@ -144,8 +149,8 @@
     return path;
   }
 
-  async function removePhoto(memberId) {
-    var result = await N.client.storage.from(BUCKET).remove([photoPathFor(memberId)]);
+  async function removePhoto(profileId) {
+    var result = await N.client.storage.from(BUCKET).remove([photoPathFor(profileId)]);
     if (result.error) throw result.error;
   }
 

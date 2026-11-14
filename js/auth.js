@@ -138,31 +138,32 @@
   }
 
   // Works out who the visitor is and what they may see.
-  // Returns { session, role, member } where role is 'admin', 'member' or null,
-  // and member is their directory entry { id, display_name, email } (or null).
+  // Returns { session, role, profile } where role is 'admin', 'member' or null,
+  // and profile is their directory card { id, display_name, email, member_updated_on } (or null).
   async function loadAccess() {
     var sessionResult = await client.auth.getSession();
     if (sessionResult.error) throw sessionResult.error;
     var session = sessionResult.data.session;
-    if (!session) return { session: null, role: null, member: null };
+    if (!session) return { session: null, role: null, profile: null };
 
     var access = await client.rpc('my_access');
     if (access.error) throw access.error;
     var role = access.data || null;
-    if (!role) return { session: session, role: null, member: null };
+    if (!role) return { session: session, role: null, profile: null };
 
     var claim = await client.rpc('claim_membership');
     if (claim.error) throw claim.error;
 
-    // The caller's directory entry (it may have been created by an admin before their first login).
+    // The caller's profile (it may have been created by an admin before their first sign-in;
+    // claim_membership() has just linked it, or created a blank one).
     var me = await client
-      .from('members')
-      .select('id, display_name, email')
-      .eq('user_id', session.user.id)
+      .from('profiles')
+      .select('id, display_name, email, member_updated_on')
+      .eq('member_id', session.user.id)
       .maybeSingle();
     if (me.error) throw me.error;
 
-    return { session: session, role: role, member: me.data };
+    return { session: session, role: role, profile: me.data };
   }
 
   // Used by every page under members/. Shows "loading" until the check is done, then:
@@ -203,7 +204,7 @@
       return null;
     }
 
-    var name = (access.member && access.member.display_name) ||
+    var name = (access.profile && access.profile.display_name) ||
       (access.session.user.email || '').split('@')[0];
     setText('[data-slot="name"]', name);
     setText('[data-slot="email"]', access.session.user.email || '');

@@ -1,104 +1,185 @@
 -- ===========================================================================
--- STEP 2: member directory, admin-created members, profiles and headshots
+-- STEP 2: member directory, profiles and headshots
 -- ===========================================================================
 --
 -- To upgrade a project that already has step 1: run this file once in the Supabase SQL Editor.
--- It never deletes members or allowlist entries you added, and it is safe to run again.
+-- It never deletes allowlist entries or members you added, and it is safe to run again.
 -- (supabase/schema.sql = step 1 followed by this same section, for brand-new projects.)
 --
--- What changes:
---   * A directory entry (members row) no longer needs a login. Admins can create one for any email
---     on the list, with a profile. When that person first signs in with the same, confirmed email,
---     the entry is linked to their login and they can edit it (and only it).
---   * members gets its own id plus user_id (the login, empty until first sign-in). Existing rows keep
---     their id and are linked to their login automatically.
---   * Ordinary members can read only their OWN members row. Everyone else comes through directory(),
---     which shows email or phone only where that member chose to show them.
---   * New: profiles table, directory() function, private "headshots" storage bucket.
+-- Concepts:
+--   allowed_emails = who may get in (access).            Unchanged from step 1.
+--   members        = one row per login (sign-in record). Unchanged from step 1, except that
+--                    removing someone's access no longer deletes their row.
+--   profiles       = the directory card. One per email (unique, lowercase). An admin can create it
+--                    before the person ever signs in. member_id stays empty until that person first
+--                    signs in with a CONFIRMED matching email (any login method), then links to them.
+--
+-- Rules:
+--   * Access always comes from allowed_emails. Removing an email blocks access at once but never
+--     deletes the profile; deleting a profile is a separate admin action.
+--   * Whether a card appears in the directory depends only on profiles.listed, which only admins
+--     change. A card whose email is no longer on the list is marked "former member".
+--   * profiles.foreign_member (admins only) marks people who moved abroad: still members, still see the
+--     directory, shown with a "Foreign member" label, and to be left out of club emails when the site
+--     starts sending them.
+--   * Members read and edit only their own profile; admins manage all. Email and phone appear in the
+--     directory only where that person turned show_email / show_phone on (both off by default).
 
--- ---------------------------------------------------------------------------
--- members: decouple from logins
--- ---------------------------------------------------------------------------
-
+-- Safety check: stop if an earlier draft of this step (with a different profiles table) was run.
 do $$
 begin
-  -- user_id = the login linked to this entry (null until the person first signs in)
-  if not exists (
-    select 1 from information_schema.columns
-    where table_schema = 'public' and table_name = 'members' and column_name = 'user_id'
-  ) then
-    alter table public.members add column user_id uuid;
-    update public.members set user_id = id;               -- step 1 rows: id was the login id
-    alter table public.members drop constraint if exists members_id_fkey;
-    alter table public.members alter column id set default gen_random_uuid();
-    alter table public.members add constraint members_user_id_key unique (user_id);
-    alter table public.members add constraint members_user_id_fkey
-      foreign key (user_id) references auth.users (id) on delete set null;
-  end if;
-
-  -- one entry per email, and every entry's email must be on the allowlist
-  if not exists (select 1 from pg_constraint where conname = 'members_email_key') then
-    update public.members set email = lower(btrim(email)) where email <> lower(btrim(email));
-    -- rows whose email is no longer on the list had no access anyway (step 1 removed them on delete)
-    delete from public.members m
-      where m.email is null or not exists (select 1 from public.allowed_emails a where a.email = m.email);
-    alter table public.members alter column email set not null;
-    alter table public.members add constraint members_email_key unique (email);
-    alter table public.members add constraint members_email_fkey
-      foreign key (email) references public.allowed_emails (email) on update cascade on delete cascade;
-  end if;
-
-  if not exists (select 1 from pg_constraint where conname = 'members_display_name_not_blank') then
-    alter table public.members
-      add constraint members_display_name_not_blank check (display_name is null or btrim(display_name) <> '');
+  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'profiles')
+     and not exists (select 1 from information_schema.columns
+                     where table_schema = 'public' and table_name = 'profiles' and column_name = 'email') then
+    raise exception 'An earlier draft of the step 2 SQL was run on this project. Nothing was changed. Ask for the clean-up script before running this file.';
   end if;
 end;
 $$;
 
--- The foreign key above now removes a members row when its email leaves the list.
+-- ---------------------------------------------------------------------------
+-- members: keep the sign-in record when access is removed; members see only their own row
+-- ---------------------------------------------------------------------------
+
 drop trigger if exists allowed_emails_after_delete on public.allowed_emails;
 drop function if exists public.allowed_emails_after_delete();
 
--- Normalise emails on new entries; only claim_membership() sets user_id.
-create or replace function public.members_before_write()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  new.email := lower(btrim(new.email));
-  new.display_name := nullif(btrim(new.display_name), '');
-  if tg_op = 'INSERT' then
-    new.created_on := now();
-  end if;
-  return new;
-end;
-$$;
+drop policy if exists "members read members"                  on public.members;  -- step 1
+drop policy if exists "members read own row, admins read all" on public.members;
 
-drop trigger if exists members_before_write on public.members;
-create trigger members_before_write
-  before insert or update on public.members
-  for each row execute function public.members_before_write();
+create policy "members read own row, admins read all" on public.members
+  for select to authenticated
+  using (
+    ((select public.is_member()) and id = (select auth.uid()))
+    or (select public.is_admin())
+  );
 
--- The signed-in person's directory entry id, or null.
-create or replace function public.current_member_id()
+-- ---------------------------------------------------------------------------
+-- profiles: the directory card
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.profiles (
+  id                 uuid primary key default gen_random_uuid(),
+  email              text not null,
+  member_id          uuid references public.members (id) on delete set null,
+  display_name       text not null,
+  bio                text,
+  phone              text,
+  show_email         boolean not null default false,
+  show_phone         boolean not null default false,
+  photo_path         text,
+  listed             boolean not null default true,
+  foreign_member     boolean not null default false,
+  created_on         timestamptz not null default now(),
+  updated_on         timestamptz not null default now(),
+  member_updated_on  timestamptz,  -- last time the person saved their own profile (null = prompt them)
+  constraint profiles_email_key          unique (email),
+  constraint profiles_member_id_key      unique (member_id),
+  constraint profiles_email_lower        check (email = lower(btrim(email))),
+  constraint profiles_email_shape        check (email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
+  constraint profiles_display_name_shape check (btrim(display_name) <> '' and char_length(display_name) <= 80),
+  constraint profiles_bio_length         check (bio is null or char_length(bio) <= 500),
+  constraint profiles_phone_shape        check (phone is null or phone ~ '^[0-9+() .-]{5,30}$'),
+  -- a photo can only live in the profile's own folder
+  constraint profiles_photo_path         check (photo_path is null or photo_path = id::text || '/avatar.jpg')
+);
+
+alter table public.profiles enable row level security;
+
+-- The signed-in person's profile id, or null. Only for people who currently have access.
+create or replace function public.current_profile_id()
 returns uuid
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select m.id
-  from public.members m
-  where m.user_id = auth.uid()
+  select p.id
+  from public.profiles p
+  where p.member_id = auth.uid()
     and public.is_member();
 $$;
 
--- Called by the site after every sign-in. For an allowed, confirmed caller it:
---   1. finds the entry already linked to their login, or
---   2. links the entry an admin created for their email (if not linked to anyone yet), or
---   3. creates a new entry.
+-- Tidies values. For edits made directly from the site by non-admins (current_user is
+-- 'authenticated'), keeps email, member_id and listed as they were. The database's own functions
+-- (sign-in linking, admin actions) and the SQL editor are not limited by this.
+-- Records when a person saves their own, already linked profile.
+-- Runs with the caller's rights (not security definer) so current_user tells these cases apart.
+create or replace function public.profiles_before_write()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.email := lower(btrim(new.email));
+  new.display_name := btrim(new.display_name);
+  new.bio := nullif(btrim(new.bio), '');
+  new.phone := nullif(btrim(new.phone), '');
+  new.updated_on := now();
+  if tg_op = 'INSERT' then
+    new.created_on := now();
+    new.member_updated_on := null;
+  else
+    if current_user = 'authenticated' and not public.is_admin() then
+      new.email := old.email;
+      new.member_id := old.member_id;
+      new.listed := old.listed;
+      new.foreign_member := old.foreign_member;
+      new.created_on := old.created_on;
+    end if;
+    if auth.uid() is not null and old.member_id = auth.uid() then
+      new.member_updated_on := now();
+    else
+      new.member_updated_on := old.member_updated_on;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_before_write on public.profiles;
+create trigger profiles_before_write
+  before insert or update on public.profiles
+  for each row execute function public.profiles_before_write();
+
+drop policy if exists "members read own profile, admins read all"     on public.profiles;
+drop policy if exists "admins add profiles"                           on public.profiles;
+drop policy if exists "members update own profile, admins update any" on public.profiles;
+drop policy if exists "admins delete profiles"                        on public.profiles;
+
+create policy "members read own profile, admins read all" on public.profiles
+  for select to authenticated
+  using (id = (select public.current_profile_id()) or (select public.is_admin()));
+
+create policy "admins add profiles" on public.profiles
+  for insert to authenticated
+  with check ((select public.is_admin()));
+
+create policy "members update own profile, admins update any" on public.profiles
+  for update to authenticated
+  using (id = (select public.current_profile_id()) or (select public.is_admin()))
+  with check (id = (select public.current_profile_id()) or (select public.is_admin()));
+
+create policy "admins delete profiles" on public.profiles
+  for delete to authenticated
+  using ((select public.is_admin()));
+
+revoke all on table public.profiles from public, anon, authenticated;
+grant select, delete on table public.profiles to authenticated;
+grant insert (email, display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member)
+  on table public.profiles to authenticated;
+grant update (display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member)
+  on table public.profiles to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Sign-in: link or create the caller's profile (called by the site after every sign-in)
+-- ---------------------------------------------------------------------------
+
+-- For an allowed, confirmed caller:
+--   1. creates or refreshes their members row (as in step 1);
+--   2. if no profile is linked to them yet, links the profile with their email (whatever login
+--      method they used: Google and password sign-ins with the same email land on the same profile);
+--   3. if there is no profile for their email at all, creates a blank one.
 -- Does nothing for people not on the list.
 create or replace function public.claim_membership()
 returns void
@@ -111,7 +192,6 @@ declare
   u auth.users%rowtype;
   my_email text;
   default_name text;
-  mid uuid;
 begin
   if not public.is_member() then
     return;
@@ -125,153 +205,123 @@ begin
     split_part(my_email, '@', 1)
   )), 80);
 
-  select id into mid from public.members where user_id = u.id;
+  insert into public.members (id, email, display_name, last_login)
+  values (u.id, my_email, default_name, now())
+  on conflict (id) do update
+    set email      = excluded.email,
+        last_login = excluded.last_login,
+        display_name = coalesce(public.members.display_name, excluded.display_name);
 
-  if mid is null then
-    update public.members
-      set user_id = u.id,
-          last_login = now(),
-          display_name = coalesce(display_name, default_name)
-      where email = my_email and user_id is null
-      returning id into mid;
-  end if;
-
-  if mid is null then
-    insert into public.members (user_id, email, display_name, last_login)
-    values (u.id, my_email, default_name, now())
-    on conflict (email) do nothing;
+  if exists (select 1 from public.profiles where member_id = u.id) then
     return;
   end if;
 
-  update public.members set last_login = now() where id = mid;
-  -- follow a change of login email when the new address is on the list and free
-  begin
-    update public.members set email = my_email where id = mid and email <> my_email;
-  exception when unique_violation or foreign_key_violation then
-    null;
-  end;
+  update public.profiles set member_id = u.id
+    where email = my_email and member_id is null;
+  if found then
+    return;
+  end if;
+
+  insert into public.profiles (email, member_id, display_name)
+  values (my_email, u.id, default_name)
+  on conflict (email) do nothing;  -- a profile for this email is linked to another login: leave it
 end;
 $$;
 
-drop policy if exists "members read members"                  on public.members;  -- step 1
-drop policy if exists "members read own row, admins read all" on public.members;
-drop policy if exists "members update own name"               on public.members;
-drop policy if exists "admins update any member"              on public.members;
-drop policy if exists "admins add members"                    on public.members;
-
-create policy "members read own row, admins read all" on public.members
-  for select to authenticated
-  using (
-    ((select public.is_member()) and user_id = (select auth.uid()))
-    or (select public.is_admin())
-  );
-
-create policy "members update own name" on public.members
-  for update to authenticated
-  using ((select public.is_member()) and user_id = (select auth.uid()))
-  with check ((select public.is_member()) and user_id = (select auth.uid()));
-
-create policy "admins update any member" on public.members
-  for update to authenticated
-  using ((select public.is_admin()))
-  with check ((select public.is_admin()));
-
-create policy "admins add members" on public.members
-  for insert to authenticated
-  with check ((select public.is_admin()));
-
-revoke all on table public.members from public, anon, authenticated;
-grant select                        on table public.members to authenticated;
-grant insert (email, display_name)  on table public.members to authenticated;
-grant update (display_name)         on table public.members to authenticated;
-
 -- ---------------------------------------------------------------------------
--- profiles: one per directory entry, created when it is first saved
--- (no row yet = "has not filled in a profile")
+-- Admin actions that must happen together
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.profiles (
-  member_id   uuid primary key references public.members (id) on delete cascade,
-  bio         text,
-  phone       text,
-  show_email  boolean not null default false,
-  show_phone  boolean not null default false,
-  photo_path  text,
-  listed      boolean not null default true,
-  updated_on  timestamptz default now(),
-  constraint profiles_bio_length   check (bio is null or char_length(bio) <= 500),
-  constraint profiles_phone_shape  check (phone is null or phone ~ '^[0-9+() .-]{5,30}$'),
-  -- a member's photo can only live in their own folder
-  constraint profiles_photo_path   check (photo_path is null or photo_path = member_id::text || '/avatar.jpg')
-);
-
-alter table public.profiles enable row level security;
-
--- Tidies values, stamps updated_on, and stops non-admins changing "listed" (silently kept as it was).
--- In the SQL editor auth.uid() is null, so the office can still change anything there.
-create or replace function public.profiles_before_write()
-returns trigger
+-- Add a member: puts the email on the list AND creates their profile, in one step.
+-- If the email is already on the list, its role is left as it is. If a profile already exists
+-- for the email (for example someone whose access was removed), it is kept as it is, apart from
+-- "listed", which is set as asked. Returns the profile id.
+create or replace function public.admin_add_member(
+  p_email text,
+  p_display_name text,
+  p_role text default 'member',
+  p_listed boolean default true,
+  p_foreign boolean default false
+)
+returns uuid
 language plpgsql
+volatile
 security definer
 set search_path = ''
 as $$
+declare
+  e text := lower(btrim(p_email));
+  pid uuid;
 begin
-  new.bio := nullif(btrim(new.bio), '');
-  new.phone := nullif(btrim(new.phone), '');
-  new.updated_on := now();
-  if auth.uid() is not null and not public.is_admin() then
-    if tg_op = 'INSERT' then
-      new.listed := true;
-    else
-      new.listed := old.listed;
-      new.member_id := old.member_id;
-    end if;
+  if not public.is_admin() then
+    raise exception 'Only admins can add members.' using errcode = '42501';
   end if;
-  return new;
+  if p_role not in ('member', 'admin') then
+    raise exception 'Role must be member or admin.' using errcode = '22023';
+  end if;
+
+  insert into public.allowed_emails (email, role) values (e, p_role)
+  on conflict (email) do nothing;
+
+  select id into pid from public.profiles where email = e;
+  if pid is not null then
+    update public.profiles set listed = coalesce(p_listed, true) where id = pid;
+    return pid;
+  end if;
+
+  insert into public.profiles (email, display_name, listed, foreign_member, member_id)
+  values (e, p_display_name, coalesce(p_listed, true), coalesce(p_foreign, false),
+          (select m.id from public.members m
+            where lower(m.email) = e
+              and not exists (select 1 from public.profiles x where x.member_id = m.id)))
+  returning id into pid;
+
+  return pid;
 end;
 $$;
 
-drop trigger if exists profiles_before_write on public.profiles;
-create trigger profiles_before_write
-  before insert or update on public.profiles
-  for each row execute function public.profiles_before_write();
-
-drop policy if exists "members read own profile, admins read all"     on public.profiles;
-drop policy if exists "members add own profile, admins add any"       on public.profiles;
-drop policy if exists "members update own profile, admins update any" on public.profiles;
-
-create policy "members read own profile, admins read all" on public.profiles
-  for select to authenticated
-  using (member_id = (select public.current_member_id()) or (select public.is_admin()));
-
-create policy "members add own profile, admins add any" on public.profiles
-  for insert to authenticated
-  with check (member_id = (select public.current_member_id()) or (select public.is_admin()));
-
-create policy "members update own profile, admins update any" on public.profiles
-  for update to authenticated
-  using (member_id = (select public.current_member_id()) or (select public.is_admin()))
-  with check (member_id = (select public.current_member_id()) or (select public.is_admin()));
-
-revoke all on table public.profiles from public, anon, authenticated;
-grant select on table public.profiles to authenticated;
-grant insert (member_id, bio, phone, show_email, show_phone, photo_path, listed) on table public.profiles to authenticated;
-grant update (bio, phone, show_email, show_phone, photo_path, listed)            on table public.profiles to authenticated;
+-- Remove access: takes the email off the list (the step 1 rules still apply: not yourself, never
+-- the last admin) and, if asked, hides their card. Never deletes the profile.
+create or replace function public.admin_remove_access(p_email text, p_hide boolean default true)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  e text := lower(btrim(p_email));
+begin
+  if not public.is_admin() then
+    raise exception 'Only admins can remove access.' using errcode = '42501';
+  end if;
+  delete from public.allowed_emails where email = e;
+  if not found then
+    raise exception 'That email is not on the list.' using errcode = 'P0002';
+  end if;
+  if p_hide then
+    update public.profiles set listed = false where email = e;
+  end if;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
--- The directory. Listed entries only; email and phone ONLY where the member turned the flag on.
--- Includes entries created by admins for people who have not signed in yet.
--- Returns nothing at all to callers who are not members.
+-- The directory: listed cards only; email and phone ONLY where the person turned them on.
+-- former_member = their email is no longer on the list; foreign_member = moved abroad.
+-- Returns nothing to non-members.
 -- ---------------------------------------------------------------------------
 
-create or replace function public.directory()
+drop function if exists public.directory();
+create function public.directory()
 returns table (
-  member_id    uuid,
-  display_name text,
-  bio          text,
-  photo_path   text,
-  email        text,
-  phone        text
+  profile_id    uuid,
+  display_name  text,
+  bio           text,
+  photo_path    text,
+  email         text,
+  phone          text,
+  former_member  boolean,
+  foreign_member boolean
 )
 language sql
 stable
@@ -279,31 +329,47 @@ security definer
 set search_path = ''
 as $$
   select
-    m.id,
-    m.display_name,
+    p.id,
+    p.display_name,
     p.bio,
     p.photo_path,
-    case when p.show_email then m.email end,
-    case when p.show_phone then p.phone end
-  from public.members m
-  left join public.profiles p on p.member_id = m.id
+    case when p.show_email then p.email end,
+    case when p.show_phone then p.phone end,
+    a.email is null,
+    p.foreign_member
+  from public.profiles p
+  left join public.allowed_emails a on a.email = p.email
   where public.is_member()
-    and coalesce(p.listed, true)
-  order by lower(coalesce(m.display_name, m.email));
+    and p.listed
+  order by lower(p.display_name);
 $$;
 
-revoke execute on function public.directory()             from public, anon;
-revoke execute on function public.current_member_id()     from public, anon;
-revoke execute on function public.claim_membership()      from public, anon;
-revoke execute on function public.profiles_before_write() from public, anon, authenticated;
-revoke execute on function public.members_before_write()  from public, anon, authenticated;
-grant  execute on function public.directory()             to authenticated;
-grant  execute on function public.current_member_id()     to authenticated;
-grant  execute on function public.claim_membership()      to authenticated;
+revoke execute on function public.directory()                               from public, anon;
+revoke execute on function public.current_profile_id()                      from public, anon;
+revoke execute on function public.claim_membership()                        from public, anon;
+revoke execute on function public.admin_add_member(text, text, text, boolean, boolean) from public, anon;
+revoke execute on function public.admin_remove_access(text, boolean)        from public, anon;
+revoke execute on function public.profiles_before_write()                   from public, anon, authenticated;
+grant  execute on function public.directory()                               to authenticated;
+grant  execute on function public.current_profile_id()                      to authenticated;
+grant  execute on function public.claim_membership()                        to authenticated;
+grant  execute on function public.admin_add_member(text, text, text, boolean, boolean) to authenticated;
+grant  execute on function public.admin_remove_access(text, boolean)        to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Headshots: a PRIVATE storage bucket. Files live at <member id>/avatar.jpg
--- (the directory entry id). The site shows them through signed links that expire after an hour.
+-- Existing members (signed in under step 1) get a profile with their current name.
+-- ---------------------------------------------------------------------------
+
+insert into public.profiles (email, member_id, display_name)
+select lower(m.email), m.id, coalesce(nullif(btrim(m.display_name), ''), split_part(lower(m.email), '@', 1))
+from public.members m
+join public.allowed_emails a on a.email = lower(m.email)
+where not exists (select 1 from public.profiles p where p.member_id = m.id or p.email = lower(m.email))
+on conflict do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Headshots: a PRIVATE storage bucket. Files live at <profile id>/avatar.jpg.
+-- The site shows them through signed links that expire after an hour.
 -- ---------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
@@ -327,7 +393,7 @@ create policy "headshots: upload own, admins any" on storage.objects
   with check (
     bucket_id = 'headshots'
     and (
-      name = (select public.current_member_id())::text || '/avatar.jpg'
+      name = (select public.current_profile_id())::text || '/avatar.jpg'
       or ((select public.is_admin()) and name ~ '^[0-9a-f-]{36}/avatar\.jpg$')
     )
   );
@@ -336,12 +402,12 @@ create policy "headshots: replace own, admins any" on storage.objects
   for update to authenticated
   using (
     bucket_id = 'headshots'
-    and (name = (select public.current_member_id())::text || '/avatar.jpg' or (select public.is_admin()))
+    and (name = (select public.current_profile_id())::text || '/avatar.jpg' or (select public.is_admin()))
   )
   with check (
     bucket_id = 'headshots'
     and (
-      name = (select public.current_member_id())::text || '/avatar.jpg'
+      name = (select public.current_profile_id())::text || '/avatar.jpg'
       or ((select public.is_admin()) and name ~ '^[0-9a-f-]{36}/avatar\.jpg$')
     )
   );
@@ -350,7 +416,7 @@ create policy "headshots: delete own, admins any" on storage.objects
   for delete to authenticated
   using (
     bucket_id = 'headshots'
-    and (name = (select public.current_member_id())::text || '/avatar.jpg' or (select public.is_admin()))
+    and (name = (select public.current_profile_id())::text || '/avatar.jpg' or (select public.is_admin()))
   );
 
 -- Make the site's API see the changes straight away.

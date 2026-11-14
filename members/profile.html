@@ -109,9 +109,17 @@
               <input id="show-phone" type="checkbox">
               <span id="show-phone-text">Show my phone number to other members</span>
             </label>
-            <label class="check" id="listed-row" hidden>
+          </fieldset>
+
+          <fieldset class="field" id="admin-rows" hidden>
+            <legend>Admin settings</legend>
+            <label class="check">
               <input id="listed" type="checkbox">
-              <span>Listed in the directory <span class="muted">(admins only: untick to hide this member without removing their login)</span></span>
+              <span>Listed in the directory <span class="muted">(untick to hide this card; it does not change access)</span></span>
+            </label>
+            <label class="check">
+              <input id="foreign" type="checkbox">
+              <span>Foreign member <span class="muted">(moved abroad: shown with a label, and left out of club emails)</span></span>
             </label>
           </fieldset>
 

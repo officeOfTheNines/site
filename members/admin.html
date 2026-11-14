@@ -52,19 +52,23 @@
     </section>
 
     <div data-state="ready" hidden>
-      <h1>Member list</h1>
-      <p class="muted">Only people whose email is on this list can see the member area. Signed in as
-        <span data-slot="email"></span>.</p>
+      <h1>Members</h1>
+      <p class="muted">Signed in as <span data-slot="email"></span>. Access (who can sign in) and directory cards
+        (what members see) are managed separately below.</p>
 
       <div id="admin-error" class="message error" role="alert"></div>
       <div id="admin-status" class="message success" role="status" aria-live="polite"></div>
 
       <section class="panel" aria-labelledby="add-heading">
-        <h2 id="add-heading">Add an email</h2>
-        <form id="add-form" class="add-form" novalidate>
+        <h2 id="add-heading">Add a member</h2>
+        <form id="add-form" class="member-form" novalidate>
           <div class="field">
             <label for="add-email">Email</label>
             <input id="add-email" type="email" autocomplete="off" inputmode="email" required>
+          </div>
+          <div class="field">
+            <label for="add-name">Display name</label>
+            <input id="add-name" type="text" maxlength="80" autocomplete="off" required>
           </div>
           <div class="field">
             <label for="add-role">Role</label>
@@ -73,69 +77,85 @@
               <option value="admin">Admin</option>
             </select>
           </div>
-          <button type="submit" class="button" id="add-submit">Add</button>
+          <div class="field checks">
+            <label class="check"><input id="add-listed" type="checkbox" checked> <span>Listed in the directory</span></label>
+            <label class="check"><input id="add-foreign" type="checkbox"> <span>Foreign member</span></label>
+          </div>
+          <div class="form-end">
+            <button type="submit" class="button" id="add-submit">Add member</button>
+            <p class="hint">Gives access and creates their directory card together. If the email already has a card
+              (for example someone whose access was removed), access is restored and the card is kept.</p>
+          </div>
         </form>
       </section>
 
-      <section class="panel" aria-labelledby="list-heading">
-        <h2 id="list-heading">Allowed emails</h2>
-        <p id="list-loading" class="muted">Loading…</p>
-        <table class="allowlist" id="allowlist" hidden>
-          <caption id="list-caption"></caption>
+      <section class="panel" aria-labelledby="access-heading">
+        <h2 id="access-heading">Access</h2>
+        <p class="muted">Only these emails can sign in and see the member area.</p>
+        <p id="access-loading" class="muted">Loading…</p>
+        <table class="allowlist" id="access-table" hidden>
+          <caption id="access-caption"></caption>
           <thead>
             <tr>
               <th scope="col">Email</th>
               <th scope="col">Role</th>
               <th scope="col">Added by</th>
               <th scope="col">Added on</th>
+              <th scope="col">Card</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
-          <tbody id="allowlist-body"></tbody>
+          <tbody id="access-body"></tbody>
         </table>
       </section>
 
-      <section class="panel" aria-labelledby="profiles-heading">
-        <h2 id="profiles-heading">Member profiles</h2>
-        <p class="muted">Everyone with a directory entry. People get one when they first sign in, or when you
-          add them here. Hiding someone removes their card from the directory but keeps their login and their
-          place on the list.</p>
-
-        <form id="new-member-form" class="add-form new-member-form" novalidate aria-labelledby="new-member-heading">
-          <h3 id="new-member-heading" class="form-title">Add a member to the directory</h3>
-          <div class="field">
-            <label for="new-member-email">Email</label>
-            <input id="new-member-email" type="email" autocomplete="off" inputmode="email" required aria-describedby="new-member-hint">
-          </div>
-          <div class="field">
-            <label for="new-member-name">Display name</label>
-            <input id="new-member-name" type="text" maxlength="80" autocomplete="off" required>
-          </div>
-          <button type="submit" class="button" id="new-member-submit">Add and edit profile</button>
-          <p id="new-member-hint" class="hint form-hint">The email is added to the member list too, if it is not
-            there yet. When this person signs in with that email, the entry becomes theirs to edit.</p>
-        </form>
-
-        <div id="profiles-error" class="message error" role="alert"></div>
-        <div id="profiles-status" class="message success" role="status" aria-live="polite"></div>
-        <p id="profiles-loading" class="muted">Loading…</p>
-        <p id="profiles-empty" class="muted" hidden>No directory entries yet.</p>
-        <table class="allowlist" id="profiles-table" hidden>
-          <caption id="profiles-caption"></caption>
+      <section class="panel" aria-labelledby="cards-heading">
+        <h2 id="cards-heading">Directory cards</h2>
+        <p class="muted">Every profile, including people without access. Only listed cards appear in the directory.</p>
+        <p id="cards-loading" class="muted">Loading…</p>
+        <p id="cards-empty" class="muted" hidden>No cards yet.</p>
+        <table class="allowlist" id="cards-table" hidden>
+          <caption id="cards-caption"></caption>
           <thead>
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Email</th>
+              <th scope="col">Access</th>
               <th scope="col">Signed in</th>
-              <th scope="col">Profile</th>
               <th scope="col">Directory</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
           </thead>
-          <tbody id="profiles-body"></tbody>
+          <tbody id="cards-body"></tbody>
         </table>
       </section>
     </div>
+
+    <dialog id="remove-dialog" class="dialog" aria-labelledby="remove-title">
+      <form method="dialog">
+        <h2 id="remove-title">Remove access?</h2>
+        <p><strong id="remove-email"></strong> will no longer be able to sign in to the member area. Their
+          directory card is kept.</p>
+        <label class="check" id="remove-hide-row"><input id="remove-hide" type="checkbox" checked>
+          <span>Also hide their card from the directory</span></label>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button danger">Remove access</button>
+          <button type="submit" value="cancel" class="button secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-dialog" class="dialog" aria-labelledby="delete-title">
+      <form method="dialog">
+        <h2 id="delete-title">Delete this profile?</h2>
+        <p>This permanently deletes the directory card of <strong id="delete-name"></strong>: name, bio, phone,
+          photo and settings. It cannot be undone. Their access is not changed.</p>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button danger">Delete profile</button>
+          <button type="submit" value="cancel" class="button secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
@@ -143,6 +163,7 @@
   <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
+  <script src="../js/people.js"></script>
   <script src="../js/admin.js"></script>
 </body>
 </html>

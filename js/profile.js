@@ -1,6 +1,7 @@
 // Profile editor (members/profile.html).
-//   profile.html               -> edit your own profile
-//   profile.html?member=<id>   -> admins edit another member's profile
+//   profile.html                -> edit your own profile
+//   profile.html?profile=<id>   -> admins edit any profile (including people who have not signed in,
+//                                  or whose access was removed)
 // The database decides what is allowed; the page only mirrors those rules.
 (function () {
   'use strict';
@@ -15,6 +16,7 @@
   var client = N.client;
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var PHONE_RE = /^[0-9+() .-]{5,30}$/;
+  var FIELDS = 'id, email, member_id, display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member, member_updated_on';
 
   var form = document.getElementById('profile-form');
   var nameInput = document.getElementById('display-name');
@@ -26,8 +28,9 @@
   var photoPreview = document.getElementById('photo-preview');
   var showEmail = document.getElementById('show-email');
   var showPhone = document.getElementById('show-phone');
-  var listedRow = document.getElementById('listed-row');
+  var adminRows = document.getElementById('admin-rows');
   var listed = document.getElementById('listed');
+  var foreign = document.getElementById('foreign');
   var emailShown = document.getElementById('email-shown');
   var saveButton = document.getElementById('save-button');
   var errorBox = document.getElementById('form-error');
@@ -35,13 +38,10 @@
   var cardPreview = document.getElementById('card-preview');
 
   var state = {
-    targetId: null,
+    profile: null,        // the row being edited
     isAdmin: false,
     editingOther: false,
-    email: '',
-    savedName: '',
-    profileExists: false,
-    photoPath: null,      // what is saved in the database
+    hasAccess: true,      // is the profile's email on the member list?
     photoUrl: null,       // signed link for the saved photo
     pendingBlob: null,    // a new, resized photo waiting to be saved
     pendingUrl: null,
@@ -58,17 +58,18 @@
   }
 
   function updatePreview() {
-    var count = bioInput.value.length;
-    bioCount.textContent = count + ' of 500 characters';
+    bioCount.textContent = bioInput.value.length + ' of 500 characters';
 
     var person = {
       display_name: nameInput.value.trim() || 'Your name',
       bio: bioInput.value.trim(),
-      email: showEmail.checked ? state.email : null,
-      phone: showPhone.checked && PHONE_RE.test(phoneInput.value.trim()) ? phoneInput.value.trim() : null
+      email: showEmail.checked && state.profile ? state.profile.email : null,
+      phone: showPhone.checked && PHONE_RE.test(phoneInput.value.trim()) ? phoneInput.value.trim() : null,
+      former_member: !state.hasAccess,
+      foreign_member: foreign.checked
     };
     cardPreview.replaceChildren(P.renderCard(person, currentPhotoUrl(), { headingTag: 'h3' }));
-    if (state.isAdmin && !listed.checked) {
+    if (!listed.checked) {
       cardPreview.appendChild(N.el('p', { className: 'muted small', text: 'Hidden: this card is not shown in the directory.' }));
     }
 
@@ -105,13 +106,13 @@
 
   photoRemove.addEventListener('click', function () {
     clearPending();
-    state.removePhoto = !!state.photoPath;
-    showStatus(state.photoPath ? 'Photo will be removed when you press "Save profile".' : '');
+    state.removePhoto = !!(state.profile && state.profile.photo_path);
+    showStatus(state.removePhoto ? 'Photo will be removed when you press "Save profile".' : '');
     updatePreview();
     photoInput.focus();
   });
 
-  [nameInput, bioInput, phoneInput, showEmail, showPhone, listed].forEach(function (input) {
+  [nameInput, bioInput, phoneInput, showEmail, showPhone, listed, foreign].forEach(function (input) {
     input.addEventListener('input', updatePreview);
     input.addEventListener('change', updatePreview);
   });
@@ -131,7 +132,7 @@
       return;
     }
     if (showPhone.checked && !phone) {
-      showError('Add a phone number, or untick "Show my phone number".');
+      showError('Add a phone number, or untick the "show phone number" box.');
       phoneInput.focus();
       return;
     }
@@ -140,44 +141,39 @@
     saveButton.setAttribute('aria-busy', 'true');
     showError('');
     try {
-      var photoPath = state.photoPath;
+      var id = state.profile.id;
+      var photoPath = state.profile.photo_path;
       if (state.pendingBlob) {
-        photoPath = await P.uploadPhoto(state.targetId, state.pendingBlob);
-      } else if (state.removePhoto && state.photoPath) {
-        await P.removePhoto(state.targetId);
+        photoPath = await P.uploadPhoto(id, state.pendingBlob);
+      } else if (state.removePhoto && photoPath) {
+        await P.removePhoto(id);
         photoPath = null;
       }
 
-      if (name !== state.savedName) {
-        var nameResult = await client.from('members').update({ display_name: name }).eq('id', state.targetId).select('id');
-        if (nameResult.error) throw nameResult.error;
-        if (!nameResult.data || nameResult.data.length !== 1) throw new Error('Your name could not be saved. Please reload and try again.');
-      }
-
       var row = {
+        display_name: name,
         bio: bio || null,
         phone: phone || null,
         show_email: showEmail.checked,
         show_phone: showPhone.checked,
         photo_path: photoPath
       };
-      if (state.isAdmin) row.listed = listed.checked;
+      if (state.isAdmin) {
+        row.listed = listed.checked;
+        row.foreign_member = foreign.checked;
+      }
 
-      var result = state.profileExists
-        ? await client.from('profiles').update(row).eq('member_id', state.targetId).select('member_id')
-        : await client.from('profiles').insert(Object.assign({ member_id: state.targetId }, row)).select('member_id');
+      var result = await client.from('profiles').update(row).eq('id', id).select(FIELDS);
       if (result.error) throw result.error;
       if (!result.data || result.data.length !== 1) throw new Error('The profile could not be saved. Please reload and try again.');
 
-      state.profileExists = true;
-      state.savedName = name;
+      state.profile = result.data[0];
       if (state.pendingBlob) {
         // keep showing the local copy; a fresh signed link is made on the next visit
         state.photoUrl = state.pendingUrl;
         state.pendingBlob = null;
         state.pendingUrl = null;
       }
-      state.photoPath = photoPath;
       if (!photoPath) state.photoUrl = null;
       state.removePhoto = false;
       if (!state.editingOther) N.setText('[data-slot="name"]', name);
@@ -204,72 +200,67 @@
   }
 
   async function load(access) {
-    var myId = access.member && access.member.id;
-    var param = new URLSearchParams(window.location.search).get('member');
-    if (!myId && !param) {
-      throw new Error('Your directory entry could not be set up. Please contact the office.');
-    }
+    var mine = access.profile;
+    var param = new URLSearchParams(window.location.search).get('profile');
     state.isAdmin = access.role === 'admin';
-    state.targetId = param || myId;
-    state.editingOther = state.targetId !== myId;
+    state.editingOther = !!param && !(mine && mine.id === param);
 
     if (state.editingOther && !state.isAdmin) { N.showState('not-admin'); return; }
-    if (!UUID_RE.test(state.targetId)) { N.showState('not-found'); return; }
+    if (param && !UUID_RE.test(param)) { N.showState('not-found'); return; }
+    if (!param && !mine) {
+      throw new Error('Your profile could not be set up. Please reload, or contact the office.');
+    }
 
-    var memberResult = await client.from('members').select('id, display_name, email, user_id').eq('id', state.targetId).maybeSingle();
-    if (memberResult.error) throw memberResult.error;
-    if (!memberResult.data) { N.showState('not-found'); return; }
+    var result = await client.from('profiles').select(FIELDS).eq('id', param || mine.id).maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) { N.showState('not-found'); return; }
+    var profile = state.profile = result.data;
 
-    var profileResult = await client
-      .from('profiles')
-      .select('bio, phone, show_email, show_phone, photo_path, listed')
-      .eq('member_id', state.targetId)
-      .maybeSingle();
-    if (profileResult.error) throw profileResult.error;
+    if (state.editingOther) {
+      var allow = await client.from('allowed_emails').select('email').eq('email', profile.email).maybeSingle();
+      state.hasAccess = !allow.error && !!allow.data;
+    }
 
-    var member = memberResult.data;
-    var profile = profileResult.data;
-    state.email = member.email || '';
-    state.savedName = member.display_name || '';
-    state.profileExists = !!profile;
-    state.photoPath = profile ? profile.photo_path : null;
-
-    if (state.photoPath) {
+    if (profile.photo_path) {
       try {
-        var urls = await P.signedPhotoUrls([state.photoPath]);
-        state.photoUrl = urls[state.photoPath] || null;
+        var urls = await P.signedPhotoUrls([profile.photo_path]);
+        state.photoUrl = urls[profile.photo_path] || null;
       } catch (e) {
         state.photoUrl = null;
       }
     }
 
-    nameInput.value = member.display_name || '';
-    bioInput.value = (profile && profile.bio) || '';
-    phoneInput.value = (profile && profile.phone) || '';
-    showEmail.checked = !!(profile && profile.show_email);
-    showPhone.checked = !!(profile && profile.show_phone);
-    listed.checked = profile ? profile.listed !== false : true;
-    listedRow.hidden = !state.isAdmin;
-    emailShown.textContent = state.email ? '(' + state.email + ')' : '';
+    nameInput.value = profile.display_name || '';
+    bioInput.value = profile.bio || '';
+    phoneInput.value = profile.phone || '';
+    showEmail.checked = !!profile.show_email;
+    showPhone.checked = !!profile.show_phone;
+    listed.checked = profile.listed !== false;
+    foreign.checked = !!profile.foreign_member;
+    adminRows.hidden = !state.isAdmin;
+    emailShown.textContent = profile.email ? '(' + profile.email + ')' : '';
 
     if (state.editingOther) {
-      var who = member.display_name || member.email;
+      var who = profile.display_name || profile.email;
+      var notes = ['You are editing this profile as an admin. Changes show in the directory straight away.'];
+      if (!state.hasAccess) {
+        notes.push(profile.email + ' is not on the member list: they cannot sign in to the site. If their card is listed, it is marked "Former member".');
+      } else if (!profile.member_id) {
+        notes.push(profile.email + ' has not signed in yet. When they sign in with that email, they can edit this profile themselves.');
+      }
       document.getElementById('profile-heading').textContent = 'Edit profile: ' + who;
       document.title = 'Edit profile · The Nines';
-      document.getElementById('profile-intro').textContent =
-        'You are editing another member\'s profile as an admin. Changes show in the directory straight away.' +
-        (member.user_id ? '' : ' ' + (member.email || 'This person') + ' has not signed in yet. When they sign in with ' +
-          'that email, they can edit this profile themselves.');
-      if (new URLSearchParams(window.location.search).get('new') === '1') {
-        showStatus('Directory entry created for ' + who + '. Add a bio, phone or photo below, or leave it as it is.');
-      }
+      document.getElementById('profile-intro').textContent = notes.join(' ');
       var back = document.getElementById('back-link');
       back.textContent = 'Back to admin';
       back.setAttribute('href', 'admin.html');
       document.getElementById('show-email-text').textContent = 'Show email to other members';
       document.getElementById('show-phone-text').textContent = 'Show phone number to other members';
-    } else if (!profile) {
-      showStatus('Welcome! Fill in your profile so other members can find you. Email and phone stay hidden unless you tick the boxes.');
+      if (new URLSearchParams(window.location.search).get('new') === '1') {
+        showStatus('Member added: ' + who + '. Add a bio, phone or photo below, or leave it as it is.');
+      }
+    } else if (!profile.member_updated_on) {
+      showStatus('Welcome! Check your profile and press "Save profile". Email and phone stay hidden unless you tick the boxes.');
     }
 
     N.showState('ready');
