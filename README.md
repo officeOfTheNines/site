@@ -12,19 +12,24 @@ Login and private data live in Supabase.
 project URL and the publishable (anon) key in `js/config.js`. Never add any other Supabase key or a
 database password anywhere in this repo.
 
-## What is here (step 1)
+## What is here (steps 1 and 2)
 
 | File | What it does |
 | --- | --- |
 | `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member login". |
 | `login.html` | Sign in with Google, email and password (sign in, create account, forgot password), or an emailed sign-in link. |
-| `members/index.html` | Member home: "Welcome, name", role, sign out. Placeholder for later steps. |
-| `members/admin.html` | Admins only: see, add and remove allowed emails. |
+| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
+| `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
+| `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
+| `members/admin.html` | Admins only: add a member (access and card together), remove access, and edit, hide, show or delete directory cards. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
-| `js/login.js`, `js/members.js`, `js/admin.js` | Page scripts. |
+| `js/nav.js` | The shared top bar on every members page (Home, Directory, Map, Admin, Sign out). |
+| `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
+| `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
-| `supabase/schema.sql` | Tables, security rules, helper functions and the first two admins. |
+| `supabase/schema.sql` | The complete schema for a new project: tables, security rules, helper functions, the headshots storage bucket and the first two admins. |
+| `supabase/migrations/` | One file per step, to upgrade a project that is already running. |
 | `CNAME` | Custom domain `site.thenines.club` for GitHub Pages. |
 
 ### How access works
@@ -38,6 +43,49 @@ database password anywhere in this repo.
 4. The publishable (anon) key on its own must not be able to read any table or call any function.
    `schema.sql` grants nothing to the `anon` role.
 
+### Access, sign-ins and directory cards (step 2)
+
+Three separate ideas, in three tables:
+
+| Table | Means | Created by |
+| --- | --- | --- |
+| `allowed_emails` | **Access**: who may sign in, their role, and whether they need a card (`needs_profile`) | Admins |
+| `members` | **Sign-in record**: one row per login account | Automatically, when someone on the list signs in |
+| `profiles` | **Directory card**: name, bio, phone, photo and settings, one per email | Admins in advance, or automatically on first sign-in |
+
+- **Admins can create a card before the person ever signs in.** "Add a member" on the admin page puts the
+  email on the list and creates the card in one step.
+- **Linking happens on first sign-in.** When someone signs in with a **confirmed** email that matches a
+  card, the card is linked to their login (`profiles.member_id`). Google and password sign-ins with the
+  same email land on the same card. If there is no card for their email, a blank one is created. From then
+  on they can edit their own card and nobody else's. An unconfirmed account cannot claim a card.
+- **Removing access never deletes the card.** Access stops at once. The admin chooses whether to hide the
+  card (the dialog suggests hiding). If it stays listed, it shows a **"Former member"** label. Adding the
+  email again restores access and keeps the card as it was.
+- **Deleting a card** is a separate admin action, with a confirmation. It removes the card and the photo
+  for good. If the person still has access, a blank card is created the next time they sign in.
+- **Whether a card appears in the directory depends only on "Listed"**, which only admins change. Use it,
+  for example, to keep an admin out of the directory.
+- **Office and staff accounts can have no card at all.** When an email's `needs_profile` is off, no card
+  is ever created for it automatically (not on sign-in, not during the upgrade). It still has full access.
+  `office@thenines.club` starts this way. Switch it per email with **No card** / **Create card** in the
+  admin page's Access table, or tick **No directory card** when adding someone.
+- **"Foreign member"** (admins only) marks people who have moved abroad. They keep access and appear with a
+  "Foreign member" label. When the site starts sending club emails, they will be left out.
+
+### Directory privacy (step 2)
+
+- Members only see other people through the database function `directory()`. It returns listed cards
+  only, and includes someone's email or phone **only** when that person ticked "Show my email" / "Show my
+  phone number". Both are off until they choose, including on cards created by an admin.
+- Ordinary members can read only their **own** row in `members` and `profiles`, so they cannot look up
+  other people's email or phone directly. Admins can read and edit everything.
+- Headshots are in a **private** storage bucket called `headshots`, one file per card at
+  `<profile id>/avatar.jpg`. Members can view all headshots but can only upload, replace or delete their own.
+  The site shows photos through signed links that stop working after one hour.
+- Photos are cropped to a square, resized to 400 × 400 and saved as JPEG in the browser before upload,
+  which also removes camera details such as location. Files over 5 MB or that are not images are refused.
+
 ## Setup (one-off, done by the office)
 
 ### 1. Run the database schema
@@ -48,6 +96,16 @@ database password anywhere in this repo.
 
 It is safe to run again later: it will not duplicate anything or remove members you have added.
 It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com`.
+
+**Upgrading an existing project:** run only the file for the new step, from `supabase/migrations/`:
+
+| File | What it adds |
+| --- | --- |
+| `migrations/002_directory.sql` | Step 2: the `profiles` table (directory cards, which admins can create before someone signs in), the `directory()` function, the admin actions `admin_add_member()` and `admin_remove_access()`, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. Removing access no longer deletes anything. |
+
+These files only add and change rules. They never delete rows, so members you added by hand in Supabase
+stay as they are. Each one is safe to run twice. `schema.sql` always holds the complete, current schema
+(every step together) for setting up a brand-new project.
 
 ### 2. Check the Supabase auth settings
 
@@ -78,16 +136,25 @@ pages show the name "The Nines" without the logo.
 
 1. Sign in as an admin (`office@thenines.club` or `jbsolanet@gmail.com`) and open **Admin** (or go to
    `members/admin.html`).
-2. Type the member's email, choose **Member** (or **Admin**), and press **Add**.
+2. Under **Add a member**, type their email and display name, choose **Member** or **Admin**, tick or untick
+   **Listed in the directory** and **Foreign member**, and press **Add member**. This gives access and
+   creates their card. You then land on their card and can add a bio, phone, photo and choices.
 3. Tell the member to go to the site and choose **Member login**. They can use Google if that email is a
    Google account, or create an account with a password, or ask for a sign-in link. They must use the same
-   email address that is on the list.
+   email address. Their card then becomes theirs to edit.
 
-To remove someone, press **Remove** next to their email. They lose access straight away, and their member profile is deleted (it comes back if they are added again and log in).
-You cannot remove yourself, and the last admin cannot be removed or demoted. The database blocks both.
-To change someone's role, remove them and add them again with the new role.
+For an office or staff account that should have access but no directory card, tick **No directory card**
+before pressing **Add member**.
 
-You can also add people in the Supabase SQL editor:
+Emails that are on the list without a card (for example ones added by hand in Supabase) show **Create
+card** and **No card** buttons in the **Access** table. Unless marked "No card", they also get a blank card
+automatically when they first sign in.
+
+To remove someone's access, press **Remove** in the **Access** table and choose whether to hide their card
+too. You cannot remove yourself, and the last admin cannot be removed or demoted; the database blocks both.
+To change someone's role, remove their access and add them again with the new role (their card is kept).
+
+You can also give access in the Supabase SQL editor (they get a blank card when they first sign in):
 
 ```sql
 insert into public.allowed_emails (email, role, added_by)
@@ -124,6 +191,62 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 - [ ] **Google sign-in, email confirmation, password reset and emailed sign-in links work end to end.**
   Could not run: needs the live project and real email.
 
+#### Step 2: directory, profiles, headshots, navigation
+
+- [ ] **An admin can add a member (access and card in one step) before they sign in; when that person signs
+  in with the same confirmed email, the card becomes theirs, with no duplicate.** Ran: locally (an
+  unconfirmed account is not linked; a confirmed one is linked to the admin's card and can then edit only
+  that card) and in Chromium (the form, the redirect to the new card, saving it). To do: live.
+- [ ] **Someone on the list with no card gets a blank one on first sign-in, with email and phone hidden.**
+  Ran: locally. To do: live.
+- [ ] **Removing access keeps the card; the admin chooses whether to hide it; a listed card without access
+  shows "Former member"; adding the email again restores access and keeps the card.** Ran: locally and in
+  Chromium (the dialog, with hiding ticked by default). To do: live.
+- [ ] **Deleting a card is admin-only, asks for confirmation and removes the photo too.** Ran: locally
+  (members cannot delete) and in Chromium. To do: live.
+- [ ] **Office/staff accounts (`needs_profile` off, such as `office@thenines.club`) never get a card
+  automatically, keep full admin access and still see the directory; admins can switch this per email and
+  create a card later.** Ran: locally (upgrade, sign-in, access-only add, switching, re-running the file
+  does not undo an admin's choice) and in Chromium. To do: live.
+- [ ] **"Listed" and "Foreign member" can only be changed by admins.** Ran: locally (a member's attempt is
+  ignored; an admin can set and clear both) and in Chromium. To do: live.
+- [ ] **Upgrading a running step 1 project keeps every allowlist entry and member.** Ran: locally with
+  hand-added addresses (all kept; signed-in members got cards with their names; the result is identical to
+  a fresh project). To do: live, by comparing `select count(*) from allowed_emails;` before and after.
+- [ ] **A member sees the directory and can edit only their own profile.** Ran: locally and in Chromium
+  (opening `profile.html?profile=<someone else>` as a member shows "Admins only"). To do: live.
+- [ ] **A member with "Show my email" off has no email in the directory response, even through the API with
+  the publishable key and a member's login.** Ran: locally (`directory()` returns null email and phone
+  while the flags are off). To do: live, with the SQL below or a browser's network tab.
+- [ ] **Members cannot read other people's email or phone from `members` or `profiles`.** Ran: locally (a
+  member gets only their own row from each table; admins get all). To do: live.
+- [ ] **Turning a flag on makes that detail appear, and turning it off removes it.** Ran: locally and in
+  the profile preview. To do: live.
+- [ ] **A headshot upload works, is resized, and shows through an expiring link.** Ran: in Chromium (a
+  large image is uploaded as a 400 × 400 JPEG with no camera data, to `<profile id>/avatar.jpg`; links are
+  requested for 3600 seconds). To do: live, including checking the link stops working after an hour.
+- [ ] **A member cannot overwrite or delete someone else's headshot.** Ran: locally against the storage
+  rules. To do: live.
+- [ ] **An address not on the list, or a logged-out visitor, gets nothing from the directory or the
+  bucket.** Ran: locally (anon: permission denied; outsider and removed members: zero rows and zero files).
+  To do: live, with the commands below.
+- [ ] **The navigation bar shows Admin only to admins, highlights the current page, collapses to a menu on
+  phones, and Map opens the public map in a new tab.** Ran: in Chromium. To do: live.
+
+#### Seeing the directory as a particular member (SQL editor)
+
+Replace the id with a real login id from `select id, email from public.members;`. Nothing is changed.
+
+```sql
+begin;
+set local role authenticated;
+select set_config('request.jwt.claims', json_build_object('sub', 'PUT-LOGIN-ID-HERE', 'role', 'authenticated')::text, true);
+select display_name, email, phone from public.directory();  -- email/phone only where that person opted in
+select email from public.members;                          -- only this member's own row
+select email, phone from public.profiles;                  -- only this member's own card
+rollback;
+```
+
 ### Checking that the anon key can see nothing
 
 Run these from any terminal. Each should fail with a permission error (HTTP 401 or 403, or a message
@@ -144,6 +267,16 @@ curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/my_access"
 ```bash
 curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/is_member" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{}"
 ```
+
+```bash
+curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/directory" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{}"
+```
+
+```bash
+curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/storage/v1/object/list/headshots" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{\"prefix\":\"\"}"
+```
+
+The last one should return an error or an empty list `[]`, never file names.
 
 You can also check in the SQL editor that `anon` has no privileges:
 
@@ -166,3 +299,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.
 - Text from the database is always inserted with `textContent`, never `innerHTML`.
+- The members top bar is built by `js/nav.js`. To add a page to it in a later step, add one line to the
+  `LINKS` list at the top of that file and put `<header class="site-header" data-nav="<key>"></header>`
+  on the new page.
+- Deleting a card from the admin page removes its headshot too. A card deleted directly in the Supabase
+  table editor leaves its photo in the bucket (Supabase does not allow deleting storage files from SQL);
+  tidy it up in **Storage → headshots** if needed.

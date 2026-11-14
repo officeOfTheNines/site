@@ -9,6 +9,12 @@
   }
 
   N.guardMembersPage().then(function (access) {
-    if (access) N.showState('ready');
+    if (!access) return;
+    N.showState('ready');
+
+    // A gentle prompt until the member has saved their profile themselves at least once.
+    if (access.profile && !access.profile.member_updated_on) {
+      document.getElementById('profile-prompt').hidden = false;
+    }
   });
 })();

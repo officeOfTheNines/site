@@ -1,42 +1,72 @@
-// Admin page (members/admin.html): list, add and remove allowed emails.
-// The database enforces the rules too (admins only, no removing yourself, never zero admins).
+// Admin page (members/admin.html).
+//   Add a member  -> admin_add_member(): access + directory card in one step
+//   Access        -> the allowlist; Remove asks whether to hide the card too (admin_remove_access())
+//   Cards         -> every profile: edit, hide/show, delete (with confirmation)
+// The database enforces all of this too (admins only, not yourself, never zero admins).
 (function () {
   'use strict';
 
   var N = window.Nines;
-  if (!N || N.loadFailed) {
+  var P = window.NinesPeople;
+  if (!N || N.loadFailed || !P) {
     window.NinesPageLoadFailed();
     return;
   }
 
   var client = N.client;
+  var el = N.el;
   var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
   var dateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  var collator = new Intl.Collator('en-GB', { sensitivity: 'base' });
 
   var errorBox = document.getElementById('admin-error');
   var statusBox = document.getElementById('admin-status');
-  var form = document.getElementById('add-form');
-  var emailInput = document.getElementById('add-email');
-  var roleSelect = document.getElementById('add-role');
-  var addButton = document.getElementById('add-submit');
-  var table = document.getElementById('allowlist');
-  var tbody = document.getElementById('allowlist-body');
-  var caption = document.getElementById('list-caption');
-  var listLoading = document.getElementById('list-loading');
+
+  var addForm = document.getElementById('add-form');
+  var addEmail = document.getElementById('add-email');
+  var addName = document.getElementById('add-name');
+  var addRole = document.getElementById('add-role');
+  var addListed = document.getElementById('add-listed');
+  var addForeign = document.getElementById('add-foreign');
+  var addNoCard = document.getElementById('add-nocard');
+  var addSubmit = document.getElementById('add-submit');
+
+  var accessLoading = document.getElementById('access-loading');
+  var accessTable = document.getElementById('access-table');
+  var accessBody = document.getElementById('access-body');
+  var accessCaption = document.getElementById('access-caption');
+
+  var cardsLoading = document.getElementById('cards-loading');
+  var cardsEmpty = document.getElementById('cards-empty');
+  var cardsTable = document.getElementById('cards-table');
+  var cardsBody = document.getElementById('cards-body');
+  var cardsCaption = document.getElementById('cards-caption');
+
+  var removeDialog = document.getElementById('remove-dialog');
+  var removeEmailNode = document.getElementById('remove-email');
+  var removeHide = document.getElementById('remove-hide');
+  var removeHideRow = document.getElementById('remove-hide-row');
+  var deleteDialog = document.getElementById('delete-dialog');
+  var deleteNameNode = document.getElementById('delete-name');
 
   var myEmail = '';
-  var rows = [];
+  var access = [];   // allowed_emails rows
+  var cards = [];    // profiles rows
 
   function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
   function showStatus(text) { errorBox.textContent = ''; statusBox.textContent = text || ''; }
 
   function dbError(error) {
     if (!error) return N.friendlyError(error);
-    if (error.code === '23505') return 'That email is already on the list.';
-    if (error.code === '42501' || /row-level security/i.test(error.message || '')) {
-      return 'You do not have permission to do that. Only admins can change the list.';
+    var msg = String(error.message || '');
+    if (error.code === '23505') return 'That email already exists.';
+    if (error.code === '42501' || /row-level security|permission denied/i.test(msg)) {
+      return 'You do not have permission to do that. Only admins can change members.';
     }
-    if (error.code === '23514') return 'That email address does not look right.';
+    if (error.code === '23514' || /check constraint/i.test(msg)) {
+      if (/display_name/.test(msg)) return 'Please enter a display name of 1 to 80 characters.';
+      return 'That email address does not look right.';
+    }
     return N.friendlyError(error);
   }
 
@@ -46,109 +76,327 @@
     return isNaN(d) ? '' : dateFormat.format(d);
   }
 
-  function render() {
-    var el = N.el;
-    var adminCount = rows.filter(function (r) { return r.role === 'admin'; }).length;
-    tbody.replaceChildren();
+  // Opens a <dialog> and resolves true when the admin confirms.
+  function confirmDialog(dialog) {
+    return new Promise(function (resolve) {
+      function done() {
+        dialog.removeEventListener('close', done);
+        resolve(dialog.returnValue === 'confirm');
+      }
+      dialog.returnValue = '';
+      dialog.addEventListener('close', done);
+      if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+      } else {
+        dialog.returnValue = window.confirm(dialog.textContent.replace(/\s+/g, ' ').trim()) ? 'confirm' : 'cancel';
+        done();
+      }
+    });
+  }
 
-    rows.forEach(function (row) {
+  // ---- Loading ----
+
+  async function loadAll() {
+    var a = await client.from('allowed_emails').select('email, role, added_by, added_on, needs_profile')
+      .order('role', { ascending: true }).order('email', { ascending: true });
+    if (a.error) throw a.error;
+    var c = await client.from('profiles')
+      .select('id, email, member_id, display_name, listed, foreign_member, photo_path, updated_on');
+    if (c.error) throw c.error;
+    var m = await client.from('members').select('id, last_login');
+    if (m.error) throw m.error;
+
+    var lastLogin = {};
+    (m.data || []).forEach(function (row) { lastLogin[row.id] = row.last_login; });
+    access = a.data || [];
+    cards = (c.data || []).map(function (row) {
+      row.last_login = row.member_id ? lastLogin[row.member_id] : null;
+      return row;
+    }).sort(function (x, y) { return collator.compare(x.display_name || '', y.display_name || ''); });
+
+    renderAccess();
+    renderCards();
+  }
+
+  function refresh() {
+    return loadAll().catch(function (error) {
+      accessLoading.hidden = true;
+      cardsLoading.hidden = true;
+      showError('Could not load members. ' + dbError(error));
+    });
+  }
+
+  function accessRow(email) {
+    return access.find(function (r) { return r.email === email; }) || null;
+  }
+
+  function roleOf(email) {
+    var row = access.find(function (r) { return r.email === email; });
+    return row ? row.role : null;
+  }
+
+  // ---- Access table ----
+
+  function renderAccess() {
+    var admins = access.filter(function (r) { return r.role === 'admin'; }).length;
+    var cardByEmail = {};
+    cards.forEach(function (c) { cardByEmail[c.email] = c; });
+    accessBody.replaceChildren();
+
+    access.forEach(function (row) {
       var isMe = row.email === myEmail;
-      var isLastAdmin = row.role === 'admin' && adminCount <= 1;
+      var isLastAdmin = row.role === 'admin' && admins <= 1;
       var reason = isMe ? 'You cannot remove yourself.' : (isLastAdmin ? 'The last admin cannot be removed.' : '');
 
-      var removeButton = el('button', {
+      var remove = el('button', {
         type: 'button',
         className: 'button danger',
-        'aria-label': 'Remove ' + row.email,
+        'aria-label': 'Remove access for ' + row.email,
         'aria-disabled': reason ? 'true' : null,
         title: reason || null,
         text: 'Remove'
       });
-      removeButton.addEventListener('click', function () {
+      remove.addEventListener('click', function () {
         if (reason) { showError(reason); return; }
-        removeEmail(row.email, removeButton);
+        removeAccess(row.email, remove);
       });
+
+      var card = cardByEmail[row.email];
+      var cardCell;
+      if (card) {
+        cardCell = el('td', { 'data-label': 'Card', text: card.listed ? 'Listed' : 'Hidden' });
+      } else {
+        var create = el('button', { type: 'button', className: 'button secondary', 'aria-label': 'Create a card for ' + row.email, text: 'Create card' });
+        create.addEventListener('click', function () {
+          addEmail.value = row.email;
+          addRole.value = row.role;
+          addName.value = '';
+          addNoCard.checked = false;
+          syncNoCard();
+          addName.focus();
+          showStatus('Type a display name for ' + row.email + ' and press "Add member" to create their card.');
+        });
+        var cellChildren = [];
+        if (row.needs_profile === false) {
+          cellChildren.push(el('span', { className: 'muted', text: 'No card (office/staff) ' }));
+          cellChildren.push(create);
+        } else {
+          var noCard = el('button', { type: 'button', className: 'button secondary', 'aria-label': 'No card needed for ' + row.email, text: 'No card' });
+          noCard.addEventListener('click', function () { setNeedsProfile(row.email, false, noCard); });
+          cellChildren.push(el('div', { className: 'row-actions' }, [create, noCard]));
+        }
+        cardCell = el('td', { 'data-label': 'Card' }, cellChildren);
+      }
 
       var emailCell = el('td', { className: 'email', 'data-label': 'Email' }, [row.email]);
       if (isMe) emailCell.appendChild(el('span', { className: 'muted', text: ' (you)' }));
 
-      tbody.appendChild(el('tr', null, [
+      accessBody.appendChild(el('tr', null, [
         emailCell,
         el('td', { 'data-label': 'Role', text: row.role === 'admin' ? 'Admin' : 'Member' }),
         el('td', { 'data-label': 'Added by', text: row.added_by || '—' }),
         el('td', { 'data-label': 'Added on', text: formatDate(row.added_on) || '—' }),
-        el('td', { className: 'actions-cell' }, [removeButton])
+        cardCell,
+        el('td', { className: 'actions-cell' }, [remove])
       ]));
     });
 
-    var memberCount = rows.length - adminCount;
-    caption.textContent = rows.length + (rows.length === 1 ? ' email' : ' emails') +
-      ' (' + adminCount + (adminCount === 1 ? ' admin' : ' admins') + ', ' +
-      memberCount + (memberCount === 1 ? ' member' : ' members') + ')';
-    listLoading.hidden = true;
-    table.hidden = false;
+    accessCaption.textContent = access.length + (access.length === 1 ? ' email' : ' emails') +
+      ' (' + admins + (admins === 1 ? ' admin' : ' admins') + ')';
+    accessLoading.hidden = true;
+    accessTable.hidden = false;
   }
 
-  async function loadList() {
-    var result = await client
-      .from('allowed_emails')
-      .select('email, role, added_by, added_on')
-      .order('role', { ascending: true })
-      .order('email', { ascending: true });
-    if (result.error) { showError(dbError(result.error)); listLoading.textContent = 'Could not load the list.'; return; }
-    rows = result.data || [];
-    render();
-  }
+  async function removeAccess(email, button) {
+    var card = cards.find(function (c) { return c.email === email; });
+    removeEmailNode.textContent = email;
+    removeHide.checked = true;
+    removeHideRow.hidden = !card || !card.listed;
+    if (!(await confirmDialog(removeDialog))) return;
 
-  async function removeEmail(email, button) {
-    if (!window.confirm('Remove ' + email + ' from the member list? They will lose access straight away.')) return;
     button.disabled = true;
     showError('');
-    var result = await client.from('allowed_emails').delete().eq('email', email).select('email');
+    var hide = !!card && card.listed && removeHide.checked;
+    var result = await client.rpc('admin_remove_access', { p_email: email, p_hide: hide });
     button.disabled = false;
-    if (result.error) { showError(dbError(result.error)); await loadList(); return; }
-    if (!result.data || result.data.length === 0) {
-      showError('Could not remove ' + email + '. It may already have been removed.');
-    } else {
-      showStatus(email + ' was removed.');
-    }
-    await loadList();
+    if (result.error) { showError(dbError(result.error)); await refresh(); return; }
+    var note = '';
+    if (card && hide) note = ' Their card is hidden.';
+    else if (card && card.listed) note = ' Their card is still listed, marked "Former member".';
+    showStatus(email + ' can no longer sign in.' + note);
+    await refresh();
   }
 
-  form.addEventListener('submit', async function (event) {
-    event.preventDefault();
-    var email = emailInput.value.trim().toLowerCase();
-    var role = roleSelect.value === 'admin' ? 'admin' : 'member';
-
-    if (!EMAIL_RE.test(email)) {
-      showError('Please enter a valid email address, like name@example.com.');
-      emailInput.focus();
-      return;
-    }
-    if (rows.some(function (r) { return r.email === email; })) {
-      showError('That email is already on the list.');
-      emailInput.focus();
-      return;
-    }
-
-    addButton.disabled = true;
+  async function setNeedsProfile(email, value, button) {
+    button.disabled = true;
     showError('');
-    // added_by and added_on are filled in by the database.
-    var result = await client.from('allowed_emails').insert({ email: email, role: role }).select('email');
-    addButton.disabled = false;
-    if (result.error) { showError(dbError(result.error)); return; }
-    showStatus(email + ' was added as ' + (role === 'admin' ? 'an admin' : 'a member') + '.');
-    emailInput.value = '';
-    roleSelect.value = 'member';
-    emailInput.focus();
-    await loadList();
+    var result = await client.from('allowed_emails').update({ needs_profile: value }).eq('email', email).select('email');
+    button.disabled = false;
+    if (result.error || !result.data || result.data.length !== 1) {
+      showError('Could not update ' + email + '. ' + (result.error ? dbError(result.error) : 'Please reload and try again.'));
+    } else {
+      showStatus(value ? email + ' will get a card when they next sign in.' : email + ' is marked as an office/staff account: no card will be created for it.');
+    }
+    await refresh();
+  }
+
+  // ---- Add a member ----
+
+  // "No directory card" turns the card fields off.
+  function syncNoCard() {
+    var off = addNoCard.checked;
+    [addName, addListed, addForeign].forEach(function (input) { input.disabled = off; });
+    addName.required = !off;
+  }
+  addNoCard.addEventListener('change', syncNoCard);
+
+  addForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var email = addEmail.value.trim().toLowerCase();
+    var name = addName.value.trim();
+    var noCard = addNoCard.checked;
+    var existingCard = cards.find(function (c) { return c.email === email; });
+
+    if (!EMAIL_RE.test(email)) { showError('Please enter a valid email address, like name@example.com.'); addEmail.focus(); return; }
+    if (!noCard && !name && !existingCard) { showError('Please enter a display name.'); addName.focus(); return; }
+    if (name.length > 80) { showError('Please keep the display name to 80 characters or fewer.'); addName.focus(); return; }
+    if (existingCard && roleOf(email)) {
+      showError(email + ' already has access and a card. Use "Edit" in the cards list to change it.');
+      return;
+    }
+    if (noCard && roleOf(email)) {
+      showError(email + ' already has access. Use "No card" in the Access table instead.');
+      return;
+    }
+
+    addSubmit.disabled = true;
+    showError('');
+    var result = await client.rpc('admin_add_member', {
+      p_email: email,
+      p_display_name: name || (existingCard && existingCard.display_name) || email.split('@')[0],
+      p_role: addRole.value === 'admin' ? 'admin' : 'member',
+      p_listed: addListed.checked,
+      p_foreign: addForeign.checked,
+      p_needs_profile: !noCard
+    });
+    addSubmit.disabled = false;
+    if (result.error) { showError('Could not add ' + email + '. ' + dbError(result.error)); await refresh(); return; }
+
+    if (noCard) {
+      showStatus(email + ' now has access as ' + (addRole.value === 'admin' ? 'an admin' : 'a member') +
+        ', with no directory card.' + (existingCard ? ' Their existing card was kept; delete it below if it is not wanted.' : ''));
+      addForm.reset();
+      addListed.checked = true;
+      syncNoCard();
+      await refresh();
+      return;
+    }
+
+    if (existingCard) {
+      showStatus('Access restored for ' + email + '. Their existing card was kept' + (addListed.checked ? ' and is listed.' : ' and is hidden.'));
+      addForm.reset();
+      addListed.checked = true;
+      syncNoCard();
+      await refresh();
+      return;
+    }
+    window.location.href = 'profile.html?profile=' + encodeURIComponent(result.data) + '&new=1';
   });
 
-  N.guardMembersPage().then(function (access) {
-    if (!access) return;
-    if (access.role !== 'admin') { N.showState('not-admin'); return; }
-    myEmail = (access.session.user.email || '').toLowerCase();
+  // ---- Directory cards ----
+
+  function renderCards() {
+    cardsBody.replaceChildren();
+    var hidden = 0;
+    var noAccess = 0;
+
+    cards.forEach(function (card) {
+      var role = roleOf(card.email);
+      if (!card.listed) hidden += 1;
+      if (!role) noAccess += 1;
+      var name = card.display_name || card.email;
+
+      var edit = el('a', {
+        className: 'button secondary',
+        href: 'profile.html?profile=' + encodeURIComponent(card.id),
+        'aria-label': 'Edit the card of ' + name,
+        text: 'Edit'
+      });
+      var toggle = el('button', {
+        type: 'button',
+        className: 'button secondary',
+        'aria-label': (card.listed ? 'Hide ' : 'Show ') + name + (card.listed ? ' from' : ' in') + ' the directory',
+        text: card.listed ? 'Hide' : 'Show'
+      });
+      toggle.addEventListener('click', function () { setListed(card, !card.listed, toggle); });
+      var del = el('button', { type: 'button', className: 'button danger', 'aria-label': 'Delete the card of ' + name, text: 'Delete' });
+      del.addEventListener('click', function () { deleteCard(card, del); });
+
+      var directory = card.listed ? 'Listed' : 'Hidden';
+      if (card.foreign_member) directory += ', foreign';
+
+      cardsBody.appendChild(el('tr', null, [
+        el('td', { 'data-label': 'Name', text: name }),
+        el('td', { className: 'email', 'data-label': 'Email', text: card.email }),
+        el('td', { 'data-label': 'Access', text: role === 'admin' ? 'Admin' : (role ? 'Member' : 'No access') }),
+        el('td', { 'data-label': 'Signed in', text: card.member_id ? (formatDate(card.last_login) || 'Yes') : 'Not yet' }),
+        el('td', { 'data-label': 'Directory', text: directory }),
+        el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [edit, toggle, del])])
+      ]));
+    });
+
+    var notes = [];
+    if (hidden) notes.push(hidden + ' hidden');
+    if (noAccess) notes.push(noAccess + ' without access');
+    cardsCaption.textContent = cards.length + (cards.length === 1 ? ' card' : ' cards') + (notes.length ? ' (' + notes.join(', ') + ')' : '');
+    cardsLoading.hidden = true;
+    cardsEmpty.hidden = cards.length > 0;
+    cardsTable.hidden = cards.length === 0;
+  }
+
+  async function setListed(card, value, button) {
+    button.disabled = true;
+    showError('');
+    var result = await client.from('profiles').update({ listed: value }).eq('id', card.id).select('id');
+    button.disabled = false;
+    var name = card.display_name || card.email;
+    if (result.error || !result.data || result.data.length !== 1) {
+      showError('Could not update ' + name + '. ' + (result.error ? dbError(result.error) : 'Please reload and try again.'));
+    } else {
+      showStatus(name + (value ? ' is now listed in the directory.' : ' is now hidden from the directory.'));
+    }
+    await refresh();
+  }
+
+  async function deleteCard(card, button) {
+    var name = card.display_name || card.email;
+    deleteNameNode.textContent = name + ' (' + card.email + ')';
+    if (!(await confirmDialog(deleteDialog))) return;
+
+    button.disabled = true;
+    showError('');
+    try {
+      if (card.photo_path) await P.removePhoto(card.id);
+      var result = await client.from('profiles').delete().eq('id', card.id).select('id');
+      if (result.error) throw result.error;
+      if (!result.data || result.data.length !== 1) throw new Error('Nothing was deleted. Please reload and try again.');
+      var row = accessRow(card.email);
+      showStatus('The card of ' + name + ' was deleted.' + (row && row.needs_profile !== false
+        ? ' They still have access; a blank card is created when they next sign in. Use "No card" in the Access table to stop that.'
+        : ''));
+    } catch (error) {
+      showError('Could not delete the card of ' + name + '. ' + dbError(error));
+    } finally {
+      button.disabled = false;
+      await refresh();
+    }
+  }
+
+  N.guardMembersPage().then(function (accessInfo) {
+    if (!accessInfo) return;
+    if (accessInfo.role !== 'admin') { N.showState('not-admin'); return; }
+    myEmail = (accessInfo.session.user.email || '').toLowerCase();
     N.showState('ready');
-    loadList();
+    refresh();
   });
 })();

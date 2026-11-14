@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://bfblobnjrhcacwoqszwh.supabase.co; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
   <title>Members · The Nines</title>
   <link rel="icon" href="../favicon.ico" sizes="any">
   <link rel="icon" type="image/png" href="../favicon.png">
@@ -17,18 +17,7 @@
 <body aria-busy="true">
   <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header">
-    <div class="site-header-inner">
-      <a class="brand" href="index.html">
-        <img data-logo src="../favicon.png" alt="" width="36" height="36">
-        <span>The Nines</span>
-      </a>
-      <div class="header-actions" data-state="ready" hidden>
-        <a class="button secondary" href="admin.html" data-admin-only hidden>Admin</a>
-        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
-      </div>
-    </div>
-  </header>
+  <header class="site-header" data-nav="home"></header>
 
   <main id="main">
     <noscript>
@@ -60,16 +49,28 @@
       <h1>Welcome, <span data-slot="name"></span></h1>
       <p><span class="role-badge" data-slot="role"></span></p>
 
+      <section id="profile-prompt" class="panel prompt" hidden aria-labelledby="prompt-heading">
+        <h2 id="prompt-heading">Complete your profile</h2>
+        <p>Add a photo and a few words about yourself so other members can find you in the directory.
+          Your email and phone stay hidden unless you choose to show them.</p>
+        <a class="button" href="profile.html">Fill in my profile</a>
+      </section>
+
       <section class="panel">
         <h2>Member area</h2>
+        <ul class="link-list">
+          <li><a href="directory.html">Member directory</a></li>
+          <li><a href="profile.html">Edit my profile</a></li>
+          <li data-admin-only hidden><a href="admin.html">Manage the member list</a></li>
+        </ul>
         <p class="muted">More is coming here soon.</p>
-        <p data-admin-only hidden><a href="admin.html">Manage the member list</a></p>
       </section>
     </div>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
   <script src="../js/config.js"></script>
+  <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/members.js"></script>
