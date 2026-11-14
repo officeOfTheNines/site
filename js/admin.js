@@ -28,6 +28,7 @@
   var addRole = document.getElementById('add-role');
   var addListed = document.getElementById('add-listed');
   var addForeign = document.getElementById('add-foreign');
+  var addNoCard = document.getElementById('add-nocard');
   var addSubmit = document.getElementById('add-submit');
 
   var accessLoading = document.getElementById('access-loading');
@@ -96,7 +97,7 @@
   // ---- Loading ----
 
   async function loadAll() {
-    var a = await client.from('allowed_emails').select('email, role, added_by, added_on')
+    var a = await client.from('allowed_emails').select('email, role, added_by, added_on, needs_profile')
       .order('role', { ascending: true }).order('email', { ascending: true });
     if (a.error) throw a.error;
     var c = await client.from('profiles')
@@ -123,6 +124,10 @@
       cardsLoading.hidden = true;
       showError('Could not load members. ' + dbError(error));
     });
+  }
+
+  function accessRow(email) {
+    return access.find(function (r) { return r.email === email; }) || null;
   }
 
   function roleOf(email) {
@@ -166,10 +171,21 @@
           addEmail.value = row.email;
           addRole.value = row.role;
           addName.value = '';
+          addNoCard.checked = false;
+          syncNoCard();
           addName.focus();
           showStatus('Type a display name for ' + row.email + ' and press "Add member" to create their card.');
         });
-        cardCell = el('td', { 'data-label': 'Card' }, [create]);
+        var cellChildren = [];
+        if (row.needs_profile === false) {
+          cellChildren.push(el('span', { className: 'muted', text: 'No card (office/staff) ' }));
+          cellChildren.push(create);
+        } else {
+          var noCard = el('button', { type: 'button', className: 'button secondary', 'aria-label': 'No card needed for ' + row.email, text: 'No card' });
+          noCard.addEventListener('click', function () { setNeedsProfile(row.email, false, noCard); });
+          cellChildren.push(el('div', { className: 'row-actions' }, [create, noCard]));
+        }
+        cardCell = el('td', { 'data-label': 'Card' }, cellChildren);
       }
 
       var emailCell = el('td', { className: 'email', 'data-label': 'Email' }, [row.email]);
@@ -211,19 +227,45 @@
     await refresh();
   }
 
+  async function setNeedsProfile(email, value, button) {
+    button.disabled = true;
+    showError('');
+    var result = await client.from('allowed_emails').update({ needs_profile: value }).eq('email', email).select('email');
+    button.disabled = false;
+    if (result.error || !result.data || result.data.length !== 1) {
+      showError('Could not update ' + email + '. ' + (result.error ? dbError(result.error) : 'Please reload and try again.'));
+    } else {
+      showStatus(value ? email + ' will get a card when they next sign in.' : email + ' is marked as an office/staff account: no card will be created for it.');
+    }
+    await refresh();
+  }
+
   // ---- Add a member ----
+
+  // "No directory card" turns the card fields off.
+  function syncNoCard() {
+    var off = addNoCard.checked;
+    [addName, addListed, addForeign].forEach(function (input) { input.disabled = off; });
+    addName.required = !off;
+  }
+  addNoCard.addEventListener('change', syncNoCard);
 
   addForm.addEventListener('submit', async function (event) {
     event.preventDefault();
     var email = addEmail.value.trim().toLowerCase();
     var name = addName.value.trim();
+    var noCard = addNoCard.checked;
     var existingCard = cards.find(function (c) { return c.email === email; });
 
     if (!EMAIL_RE.test(email)) { showError('Please enter a valid email address, like name@example.com.'); addEmail.focus(); return; }
-    if (!name && !existingCard) { showError('Please enter a display name.'); addName.focus(); return; }
+    if (!noCard && !name && !existingCard) { showError('Please enter a display name.'); addName.focus(); return; }
     if (name.length > 80) { showError('Please keep the display name to 80 characters or fewer.'); addName.focus(); return; }
     if (existingCard && roleOf(email)) {
       showError(email + ' already has access and a card. Use "Edit" in the cards list to change it.');
+      return;
+    }
+    if (noCard && roleOf(email)) {
+      showError(email + ' already has access. Use "No card" in the Access table instead.');
       return;
     }
 
@@ -234,15 +276,27 @@
       p_display_name: name || (existingCard && existingCard.display_name) || email.split('@')[0],
       p_role: addRole.value === 'admin' ? 'admin' : 'member',
       p_listed: addListed.checked,
-      p_foreign: addForeign.checked
+      p_foreign: addForeign.checked,
+      p_needs_profile: !noCard
     });
     addSubmit.disabled = false;
     if (result.error) { showError('Could not add ' + email + '. ' + dbError(result.error)); await refresh(); return; }
+
+    if (noCard) {
+      showStatus(email + ' now has access as ' + (addRole.value === 'admin' ? 'an admin' : 'a member') +
+        ', with no directory card.' + (existingCard ? ' Their existing card was kept; delete it below if it is not wanted.' : ''));
+      addForm.reset();
+      addListed.checked = true;
+      syncNoCard();
+      await refresh();
+      return;
+    }
 
     if (existingCard) {
       showStatus('Access restored for ' + email + '. Their existing card was kept' + (addListed.checked ? ' and is listed.' : ' and is hidden.'));
       addForm.reset();
       addListed.checked = true;
+      syncNoCard();
       await refresh();
       return;
     }
@@ -326,8 +380,9 @@
       var result = await client.from('profiles').delete().eq('id', card.id).select('id');
       if (result.error) throw result.error;
       if (!result.data || result.data.length !== 1) throw new Error('Nothing was deleted. Please reload and try again.');
-      showStatus('The card of ' + name + ' was deleted.' + (roleOf(card.email)
-        ? ' They still have access; a blank card is created when they next sign in.'
+      var row = accessRow(card.email);
+      showStatus('The card of ' + name + ' was deleted.' + (row && row.needs_profile !== false
+        ? ' They still have access; a blank card is created when they next sign in. Use "No card" in the Access table to stop that.'
         : ''));
     } catch (error) {
       showError('Could not delete the card of ' + name + '. ' + dbError(error));

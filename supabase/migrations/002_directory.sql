@@ -19,6 +19,8 @@
 --     deletes the profile; deleting a profile is a separate admin action.
 --   * Whether a card appears in the directory depends only on profiles.listed, which only admins
 --     change. A card whose email is no longer on the list is marked "former member".
+--   * allowed_emails.needs_profile = false (for example office@thenines.club) means no card is ever
+--     created automatically for that email: an office or staff account with access but no card.
 --   * profiles.foreign_member (admins only) marks people who moved abroad: still members, still see the
 --     directory, shown with a "Foreign member" label, and to be left out of club emails when the site
 --     starts sending them.
@@ -35,6 +37,29 @@ begin
   end if;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- allowed_emails: needs_profile (false = office/staff account, never gets a card automatically)
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'allowed_emails' and column_name = 'needs_profile') then
+    alter table public.allowed_emails add column needs_profile boolean not null default true;
+    -- set once, when the column is first added; admins can change it later on the admin page
+    update public.allowed_emails set needs_profile = false where email = 'office@thenines.club';
+  end if;
+end;
+$$;
+
+-- Admins may change needs_profile (and only that column) on the admin page.
+drop policy if exists "admins update allowlist settings" on public.allowed_emails;
+create policy "admins update allowlist settings" on public.allowed_emails
+  for update to authenticated
+  using ((select public.is_admin()))
+  with check ((select public.is_admin()));
+grant update (needs_profile) on table public.allowed_emails to authenticated;
 
 -- ---------------------------------------------------------------------------
 -- members: keep the sign-in record when access is removed; members see only their own row
@@ -179,7 +204,8 @@ grant update (display_name, bio, phone, show_email, show_phone, photo_path, list
 --   1. creates or refreshes their members row (as in step 1);
 --   2. if no profile is linked to them yet, links the profile with their email (whatever login
 --      method they used: Google and password sign-ins with the same email land on the same profile);
---   3. if there is no profile for their email at all, creates a blank one.
+--   3. if there is no profile for their email at all, creates a blank one, unless their email is
+--      marked needs_profile = false (office/staff accounts).
 -- Does nothing for people not on the list.
 create or replace function public.claim_membership()
 returns void
@@ -222,6 +248,10 @@ begin
     return;
   end if;
 
+  if not (select a.needs_profile from public.allowed_emails a where a.email = my_email) then
+    return;
+  end if;
+
   insert into public.profiles (email, member_id, display_name)
   values (my_email, u.id, default_name)
   on conflict (email) do nothing;  -- a profile for this email is linked to another login: leave it
@@ -233,15 +263,19 @@ $$;
 -- ---------------------------------------------------------------------------
 
 -- Add a member: puts the email on the list AND creates their profile, in one step.
--- If the email is already on the list, its role is left as it is. If a profile already exists
--- for the email (for example someone whose access was removed), it is kept as it is, apart from
--- "listed", which is set as asked. Returns the profile id.
+-- If the email is already on the list, its role is left as it is (needs_profile is set as asked).
+-- If a profile already exists for the email (for example someone whose access was removed), it is
+-- kept as it is, apart from "listed", which is set as asked. Returns the profile id.
+-- With p_needs_profile = false (office/staff account): access only, no card; returns the existing
+-- card's id if there is one, otherwise null.
+drop function if exists public.admin_add_member(text, text, text, boolean, boolean);
 create or replace function public.admin_add_member(
   p_email text,
   p_display_name text,
   p_role text default 'member',
   p_listed boolean default true,
-  p_foreign boolean default false
+  p_foreign boolean default false,
+  p_needs_profile boolean default true
 )
 returns uuid
 language plpgsql
@@ -260,10 +294,13 @@ begin
     raise exception 'Role must be member or admin.' using errcode = '22023';
   end if;
 
-  insert into public.allowed_emails (email, role) values (e, p_role)
-  on conflict (email) do nothing;
+  insert into public.allowed_emails (email, role, needs_profile) values (e, p_role, coalesce(p_needs_profile, true))
+  on conflict (email) do update set needs_profile = excluded.needs_profile;
 
   select id into pid from public.profiles where email = e;
+  if not coalesce(p_needs_profile, true) then
+    return pid;
+  end if;
   if pid is not null then
     update public.profiles set listed = coalesce(p_listed, true) where id = pid;
     return pid;
@@ -347,23 +384,24 @@ $$;
 revoke execute on function public.directory()                               from public, anon;
 revoke execute on function public.current_profile_id()                      from public, anon;
 revoke execute on function public.claim_membership()                        from public, anon;
-revoke execute on function public.admin_add_member(text, text, text, boolean, boolean) from public, anon;
+revoke execute on function public.admin_add_member(text, text, text, boolean, boolean, boolean) from public, anon;
 revoke execute on function public.admin_remove_access(text, boolean)        from public, anon;
 revoke execute on function public.profiles_before_write()                   from public, anon, authenticated;
 grant  execute on function public.directory()                               to authenticated;
 grant  execute on function public.current_profile_id()                      to authenticated;
 grant  execute on function public.claim_membership()                        to authenticated;
-grant  execute on function public.admin_add_member(text, text, text, boolean, boolean) to authenticated;
+grant  execute on function public.admin_add_member(text, text, text, boolean, boolean, boolean) to authenticated;
 grant  execute on function public.admin_remove_access(text, boolean)        to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Existing members (signed in under step 1) get a profile with their current name.
+-- Existing members (signed in under step 1) get a profile with their current name,
+-- except office/staff accounts (needs_profile = false).
 -- ---------------------------------------------------------------------------
 
 insert into public.profiles (email, member_id, display_name)
 select lower(m.email), m.id, coalesce(nullif(btrim(m.display_name), ''), split_part(lower(m.email), '@', 1))
 from public.members m
-join public.allowed_emails a on a.email = lower(m.email)
+join public.allowed_emails a on a.email = lower(m.email) and a.needs_profile
 where not exists (select 1 from public.profiles p where p.member_id = m.id or p.email = lower(m.email))
 on conflict do nothing;
 

@@ -49,7 +49,7 @@ Three separate ideas, in three tables:
 
 | Table | Means | Created by |
 | --- | --- | --- |
-| `allowed_emails` | **Access**: who may sign in, and their role | Admins |
+| `allowed_emails` | **Access**: who may sign in, their role, and whether they need a card (`needs_profile`) | Admins |
 | `members` | **Sign-in record**: one row per login account | Automatically, when someone on the list signs in |
 | `profiles` | **Directory card**: name, bio, phone, photo and settings, one per email | Admins in advance, or automatically on first sign-in |
 
@@ -66,6 +66,10 @@ Three separate ideas, in three tables:
   for good. If the person still has access, a blank card is created the next time they sign in.
 - **Whether a card appears in the directory depends only on "Listed"**, which only admins change. Use it,
   for example, to keep an admin out of the directory.
+- **Office and staff accounts can have no card at all.** When an email's `needs_profile` is off, no card
+  is ever created for it automatically (not on sign-in, not during the upgrade). It still has full access.
+  `office@thenines.club` starts this way. Switch it per email with **No card** / **Create card** in the
+  admin page's Access table, or tick **No directory card** when adding someone.
 - **"Foreign member"** (admins only) marks people who have moved abroad. They keep access and appear with a
   "Foreign member" label. When the site starts sending club emails, they will be left out.
 
@@ -139,8 +143,12 @@ pages show the name "The Nines" without the logo.
    Google account, or create an account with a password, or ask for a sign-in link. They must use the same
    email address. Their card then becomes theirs to edit.
 
-Emails that are on the list without a card (for example ones added by hand in Supabase) show a **Create
-card** button in the **Access** table. They also get a blank card automatically when they first sign in.
+For an office or staff account that should have access but no directory card, tick **No directory card**
+before pressing **Add member**.
+
+Emails that are on the list without a card (for example ones added by hand in Supabase) show **Create
+card** and **No card** buttons in the **Access** table. Unless marked "No card", they also get a blank card
+automatically when they first sign in.
 
 To remove someone's access, press **Remove** in the **Access** table and choose whether to hide their card
 too. You cannot remove yourself, and the last admin cannot be removed or demoted; the database blocks both.
@@ -196,6 +204,10 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
   Chromium (the dialog, with hiding ticked by default). To do: live.
 - [ ] **Deleting a card is admin-only, asks for confirmation and removes the photo too.** Ran: locally
   (members cannot delete) and in Chromium. To do: live.
+- [ ] **Office/staff accounts (`needs_profile` off, such as `office@thenines.club`) never get a card
+  automatically, keep full admin access and still see the directory; admins can switch this per email and
+  create a card later.** Ran: locally (upgrade, sign-in, access-only add, switching, re-running the file
+  does not undo an admin's choice) and in Chromium. To do: live.
 - [ ] **"Listed" and "Foreign member" can only be changed by admins.** Ran: locally (a member's attempt is
   ignored; an admin can set and clear both) and in Chromium. To do: live.
 - [ ] **Upgrading a running step 1 project keeps every allowlist entry and member.** Ran: locally with

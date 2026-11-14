@@ -207,9 +207,7 @@
 
     if (state.editingOther && !state.isAdmin) { N.showState('not-admin'); return; }
     if (param && !UUID_RE.test(param)) { N.showState('not-found'); return; }
-    if (!param && !mine) {
-      throw new Error('Your profile could not be set up. Please reload, or contact the office.');
-    }
+    if (!param && !mine) { N.showState('no-card'); return; }
 
     var result = await client.from('profiles').select(FIELDS).eq('id', param || mine.id).maybeSingle();
     if (result.error) throw result.error;

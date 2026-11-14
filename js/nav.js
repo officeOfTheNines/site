@@ -14,7 +14,7 @@
   ];
 
   // Pages where the links make sense: a member who is allowed in, or an admin-only page turning a member away.
-  var LINK_STATES = 'ready not-admin not-found';
+  var LINK_STATES = 'ready not-admin not-found no-card';
 
   var header = document.querySelector('header[data-nav]');
   if (!header) return;
