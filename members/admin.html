@@ -175,6 +175,23 @@
       </form>
     </dialog>
 
+    <dialog id="email-dialog" class="dialog" aria-labelledby="email-title">
+      <form method="dialog" id="email-form" novalidate>
+        <h2 id="email-title">Change email</h2>
+        <p>Move <strong id="email-old"></strong> to a new address. Their access, card, photo, bio and
+          brigadier group move with it. They then sign in with the new email.</p>
+        <div class="field">
+          <label for="email-new">New email</label>
+          <input id="email-new" type="email" autocomplete="off" inputmode="email" required>
+        </div>
+        <p id="email-error" class="message error" role="alert"></p>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button" id="email-confirm">Change email</button>
+          <button type="submit" value="cancel" class="button secondary" formnovalidate>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="group-delete-dialog" class="dialog" aria-labelledby="group-delete-title">
       <form method="dialog">
         <h2 id="group-delete-title">Delete this brigadier group?</h2>
