@@ -36,8 +36,15 @@
     return map;
   }
 
-  // Builds a member card. person = { display_name, bio, email, phone, former_member, foreign_member },
-  // photoUrl = signed link or null.
+  // "A & B" or "A, B & C"
+  function joinNames(names) {
+    var list = (names || []).filter(Boolean);
+    if (list.length <= 1) return list.join('');
+    return list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
+  }
+
+  // Builds a member card. person = { display_name, bio, email, phone, former_member, foreign_member,
+  // co_brigadiers }, photoUrl = signed link or null.
   // All text goes in with textContent; links are built from validated values only.
   function renderCard(person, photoUrl, options) {
     var el = N.el;
@@ -70,6 +77,12 @@
     if (person.foreign_member) labels.push(el('span', { className: 'card-label', text: 'Foreign member' }));
     if (labels.length) details.appendChild(el('p', { className: 'card-labels' }, labels));
     if (person.bio) details.appendChild(el('p', { className: 'card-bio', text: person.bio }));
+    if (person.co_brigadiers && person.co_brigadiers.length) {
+      details.appendChild(el('p', { className: 'card-brigadiers' }, [
+        el('span', { className: 'muted', text: (person.co_brigadiers.length === 1 ? 'Co-brigadier: ' : 'Co-brigadiers: ') }),
+        joinNames(person.co_brigadiers)
+      ]));
+    }
 
     var contact = el('ul', { className: 'card-contact' });
     if (person.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(person.email)) {
@@ -156,6 +169,7 @@
 
   window.NinesPeople = {
     initials: initials,
+    joinNames: joinNames,
     photoPathFor: photoPathFor,
     signedPhotoUrls: signedPhotoUrls,
     renderCard: renderCard,

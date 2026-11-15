@@ -1,0 +1,7 @@
+# Never commit member data: this repo is public.
+private/
+*.xlsx
+*.xls
+*.csv
+*.numbers
+import*.sql

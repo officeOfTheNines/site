@@ -130,6 +130,35 @@
           <tbody id="cards-body"></tbody>
         </table>
       </section>
+
+      <section class="panel" aria-labelledby="groups-heading">
+        <h2 id="groups-heading">Brigadier groups</h2>
+        <p class="muted">The standing teams that organise the dinners, usually two people, rarely three.
+          Co-brigadiers shown on directory cards come from these groups.</p>
+        <p id="groups-loading" class="muted">Loading…</p>
+        <p id="groups-empty" class="muted" hidden>No brigadier groups yet.</p>
+        <ul id="groups-list" class="group-list" hidden></ul>
+
+        <form id="group-form" class="group-form" novalidate aria-labelledby="group-form-title">
+          <h3 id="group-form-title" class="form-title">New brigadier group</h3>
+          <div class="field">
+            <label for="group-member-1">Member 1</label>
+            <select id="group-member-1" class="group-member"></select>
+          </div>
+          <div class="field">
+            <label for="group-member-2">Member 2</label>
+            <select id="group-member-2" class="group-member"></select>
+          </div>
+          <div class="field">
+            <label for="group-member-3">Member 3 <span class="muted">(optional)</span></label>
+            <select id="group-member-3" class="group-member"></select>
+          </div>
+          <div class="form-end">
+            <button type="submit" class="button" id="group-submit">Create group</button>
+            <button type="button" class="button secondary" id="group-cancel" hidden>Cancel editing</button>
+          </div>
+        </form>
+      </section>
     </div>
 
     <dialog id="remove-dialog" class="dialog" aria-labelledby="remove-title">
@@ -141,6 +170,17 @@
           <span>Also hide their card from the directory</span></label>
         <div class="actions">
           <button type="submit" value="confirm" class="button danger">Remove access</button>
+          <button type="submit" value="cancel" class="button secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="group-delete-dialog" class="dialog" aria-labelledby="group-delete-title">
+      <form method="dialog">
+        <h2 id="group-delete-title">Delete this brigadier group?</h2>
+        <p>Group <strong id="group-delete-name"></strong> will be deleted. The members' cards are not changed.</p>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button danger">Delete group</button>
           <button type="submit" value="cancel" class="button secondary">Cancel</button>
         </div>
       </form>

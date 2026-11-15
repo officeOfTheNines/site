@@ -12,7 +12,7 @@ Login and private data live in Supabase.
 project URL and the publishable (anon) key in `js/config.js`. Never add any other Supabase key or a
 database password anywhere in this repo.
 
-## What is here (steps 1 and 2)
+## What is here (steps 1 to 3)
 
 | File | What it does |
 | --- | --- |
@@ -21,7 +21,7 @@ database password anywhere in this repo.
 | `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
-| `members/admin.html` | Admins only: add a member (access and card together), remove access, and edit, hide, show or delete directory cards. |
+| `members/admin.html` | Admins only: add a member (access and card together), remove access, edit, hide, show or delete directory cards, and manage brigadier groups. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Map, Admin, Sign out). |
@@ -73,6 +73,24 @@ Three separate ideas, in three tables:
 - **"Foreign member"** (admins only) marks people who have moved abroad. They keep access and appear with a
   "Foreign member" label. When the site starts sending club emails, they will be left out.
 
+### Brigadier groups (step 3)
+
+- A **brigadier group** is the standing team that organises the monthly dinners: usually two members,
+  rarely three. Each dinner is run by one group.
+- Two tables: `brigadier_groups` (one row per group, with a plain integer `id`) and
+  `brigadier_group_members` (which cards belong to which group). Members are directory cards
+  (`profiles`), so groups can be set up before people sign in.
+- **Co-brigadiers are never stored.** A person's co-brigadiers are worked out from the groups they share,
+  so the relationship is never typed twice. Directory cards show "Co-brigadiers: …", naming listed cards
+  only.
+- A person normally belongs to one group. More than one is allowed (the admin page marks people who are
+  already in a group) but the site does not build anything special around it.
+- Admins create, edit and delete groups on the admin page. Deleting a group keeps the cards; deleting a
+  card removes it from its groups.
+- **Intended next step:** a `dinners` table with a `brigadier_group_id integer references
+  brigadier_groups (id)` column, so the "Brigadiers" shown for a dinner (today a free-text string such as
+  "James S.") come from that group's members.
+
 ### Directory privacy (step 2)
 
 - Members only see other people through the database function `directory()`. It returns listed cards
@@ -101,6 +119,7 @@ It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com
 
 | File | What it adds |
 | --- | --- |
+| `migrations/003_brigadier_groups.sql` | Step 3: brigadier groups (`brigadier_groups`, `brigadier_group_members`), co-brigadiers on directory cards, and the admin actions to save and delete groups. Only adds things. |
 | `migrations/002_directory.sql` | Step 2: the `profiles` table (directory cards, which admins can create before someone signs in), the `directory()` function, the admin actions `admin_add_member()` and `admin_remove_access()`, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. Removing access no longer deletes anything. |
 
 These files only add and change rules. They never delete rows, so members you added by hand in Supabase
@@ -233,6 +252,18 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 - [ ] **The navigation bar shows Admin only to admins, highlights the current page, collapses to a menu on
   phones, and Map opens the public map in a new tab.** Ran: in Chromium. To do: live.
 
+#### Step 3: brigadier groups
+
+- [ ] **Admins can create, edit and delete brigadier groups of two or three; one person in two groups is
+  allowed.** Ran: locally and in Chromium (validation for fewer than two members and duplicates; the
+  confirmation before deleting). To do: live.
+- [ ] **Co-brigadiers appear on each member's directory card and on their own profile preview, worked out
+  from shared groups; hidden cards are never named.** Ran: locally and in Chromium. To do: live.
+- [ ] **Only admins can change groups or read the group tables; outsiders and logged-out visitors get
+  nothing.** Ran: locally. To do: live.
+- [ ] **Deleting a card removes it from its groups; deleting a group keeps the cards.** Ran: locally.
+  To do: live.
+
 #### Seeing the directory as a particular member (SQL editor)
 
 Replace the id with a real login id from `select id, email from public.members;`. Nothing is changed.
@@ -299,6 +330,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.
 - Text from the database is always inserted with `textContent`, never `innerHTML`.
+- `.gitignore` blocks spreadsheets, CSV files, `import*.sql` files and a `private/` folder, so member lists
+  with emails are never committed to this public repo by accident. Member data is loaded with SQL run in
+  the Supabase SQL editor, never stored here.
 - The members top bar is built by `js/nav.js`. To add a page to it in a later step, add one line to the
   `LINKS` list at the top of that file and put `<header class="site-header" data-nav="<key>"></header>`
   on the new page.
