@@ -12,7 +12,7 @@ Login and private data live in Supabase.
 project URL and the publishable (anon) key in `js/config.js`. Never add any other Supabase key or a
 database password anywhere in this repo.
 
-## What is here (steps 1 to 3)
+## What is here (steps 1 to 4)
 
 | File | What it does |
 | --- | --- |
@@ -119,6 +119,7 @@ It creates the two first admins: `office@thenines.club` and `jbsolanet@gmail.com
 
 | File | What it adds |
 | --- | --- |
+| `migrations/004_change_email.sql` | Step 4: `admin_change_email()`, so an admin can move a member to a new email in one action. Only adds a function. |
 | `migrations/003_brigadier_groups.sql` | Step 3: brigadier groups (`brigadier_groups`, `brigadier_group_members`), co-brigadiers on directory cards, and the admin actions to save and delete groups. Only adds things. |
 | `migrations/002_directory.sql` | Step 2: the `profiles` table (directory cards, which admins can create before someone signs in), the `directory()` function, the admin actions `admin_add_member()` and `admin_remove_access()`, the private `headshots` storage bucket and its rules, and tighter rules on who can read the `members` table. Removing access no longer deletes anything. |
 
@@ -168,6 +169,18 @@ before pressing **Add member**.
 Emails that are on the list without a card (for example ones added by hand in Supabase) show **Create
 card** and **No card** buttons in the **Access** table. Unless marked "No card", they also get a blank card
 automatically when they first sign in.
+
+### Changing someone's email
+
+If a member starts using a different email, press **Change email** next to them in the **Access** table
+(or, for someone without access, in the **Directory cards** table) and type the new address. In one step:
+
+1. their access moves to the new email, keeping their role and settings;
+2. their card moves too, keeping photo, bio, brigadier groups and choices;
+3. their old login stops working. When they sign in with the new email (Google or password), the card
+   links to them automatically. Nothing is duplicated or deleted.
+
+The new email must not already be in use. You cannot change your own email; ask another admin.
 
 To remove someone's access, press **Remove** in the **Access** table and choose whether to hide their card
 too. You cannot remove yourself, and the last admin cannot be removed or demoted; the database blocks both.
@@ -263,6 +276,15 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
   nothing.** Ran: locally. To do: live.
 - [ ] **Deleting a card removes it from its groups; deleting a group keeps the cards.** Ran: locally.
   To do: live.
+
+#### Step 4: change email
+
+- [ ] **An admin can move a member to a new email: access, card, photo, bio, groups and choices move with
+  it; the old login loses access; the new login lands on the same card with no duplicate.** Ran: locally
+  (including a login that already uses the new email, a former member with only a card, and renaming an
+  office account) and in Chromium (the dialog, its checks, Escape to cancel). To do: live.
+- [ ] **Refused: an email already in use, an invalid address, the same address, your own email, and
+  anyone who is not an admin.** Ran: locally. To do: live.
 
 #### Seeing the directory as a particular member (SQL editor)
 

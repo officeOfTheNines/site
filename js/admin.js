@@ -60,6 +60,12 @@
   var groupDeleteDialog = document.getElementById('group-delete-dialog');
   var groupDeleteName = document.getElementById('group-delete-name');
 
+  var emailDialog = document.getElementById('email-dialog');
+  var emailOld = document.getElementById('email-old');
+  var emailNew = document.getElementById('email-new');
+  var emailError = document.getElementById('email-error');
+  var emailConfirm = document.getElementById('email-confirm');
+
   var myEmail = '';
   var groups = [];   // [{ id, memberIds: [profile ids] }]
   var editingGroupId = null;
@@ -185,6 +191,7 @@
         if (reason) { showError(reason); return; }
         removeAccess(row.email, remove);
       });
+      var changeEmail = makeChangeEmailButton(row.email, isMe);
 
       var card = cardByEmail[row.email];
       var cardCell;
@@ -222,7 +229,7 @@
         el('td', { 'data-label': 'Added by', text: row.added_by || '—' }),
         el('td', { 'data-label': 'Added on', text: formatDate(row.added_on) || '—' }),
         cardCell,
-        el('td', { className: 'actions-cell' }, [remove])
+        el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [changeEmail, remove])])
       ]));
     });
 
@@ -356,6 +363,9 @@
       toggle.addEventListener('click', function () { setListed(card, !card.listed, toggle); });
       var del = el('button', { type: 'button', className: 'button danger', 'aria-label': 'Delete the card of ' + name, text: 'Delete' });
       del.addEventListener('click', function () { deleteCard(card, del); });
+      var rowButtons = [edit, toggle, del];
+      // people without access are not in the Access table, so offer it here
+      if (!role) rowButtons.splice(1, 0, makeChangeEmailButton(card.email, false));
 
       var directory = card.listed ? 'Listed' : 'Hidden';
       if (card.foreign_member) directory += ', foreign';
@@ -366,7 +376,7 @@
         el('td', { 'data-label': 'Access', text: role === 'admin' ? 'Admin' : (role ? 'Member' : 'No access') }),
         el('td', { 'data-label': 'Signed in', text: card.member_id ? (formatDate(card.last_login) || 'Yes') : 'Not yet' }),
         el('td', { 'data-label': 'Directory', text: directory }),
-        el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [edit, toggle, del])])
+        el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, rowButtons)])
       ]));
     });
 
@@ -415,6 +425,61 @@
       button.disabled = false;
       await refresh();
     }
+  }
+
+  // ---- Change email ----
+
+  function makeChangeEmailButton(email, isMe) {
+    var button = el('button', {
+      type: 'button',
+      className: 'button secondary',
+      'aria-label': 'Change email ' + email,
+      'aria-disabled': isMe ? 'true' : null,
+      title: isMe ? 'Ask another admin to change your own email.' : null,
+      text: 'Change email'
+    });
+    button.addEventListener('click', function () {
+      if (isMe) { showError('You cannot change your own email here. Ask another admin.'); return; }
+      changeEmail(email, button);
+    });
+    return button;
+  }
+
+  // Keeps the dialog open until the new email is valid (or the admin cancels).
+  emailDialog.addEventListener('close', function () { emailError.textContent = ''; });
+  emailConfirm.addEventListener('click', function (event) {
+    var value = emailNew.value.trim().toLowerCase();
+    var problem = !EMAIL_RE.test(value) ? 'Please enter a valid email address.'
+      : (value === emailOld.textContent ? 'That is the same email.'
+      : (access.some(function (r) { return r.email === value; }) || cards.some(function (c) { return c.email === value; })
+        ? 'That email is already used by someone else.' : ''));
+    if (problem) {
+      event.preventDefault();
+      emailError.textContent = problem;
+      emailNew.focus();
+    }
+  });
+
+  async function changeEmail(oldEmail, button) {
+    emailOld.textContent = oldEmail;
+    emailNew.value = '';
+    emailError.textContent = '';
+    var opened = confirmDialog(emailDialog);
+    emailNew.focus();
+    if (!(await opened)) return;
+    var newEmail = emailNew.value.trim().toLowerCase();
+
+    button.disabled = true;
+    showError('');
+    var result = await client.rpc('admin_change_email', { p_old_email: oldEmail, p_new_email: newEmail });
+    button.disabled = false;
+    if (result.error) {
+      showError('Could not change ' + oldEmail + '. ' + (result.error.code === '23505'
+        ? 'The new email is already used by someone else.' : (result.error.message || dbError(result.error))));
+    } else {
+      showStatus(oldEmail + ' is now ' + newEmail + '. Ask them to sign in with the new email; their card links to them automatically.');
+    }
+    await refresh();
   }
 
   // ---- Brigadier groups ----
