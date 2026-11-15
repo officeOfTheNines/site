@@ -45,7 +45,8 @@
     photoUrl: null,       // signed link for the saved photo
     pendingBlob: null,    // a new, resized photo waiting to be saved
     pendingUrl: null,
-    removePhoto: false
+    removePhoto: false,
+    coBrigadiers: []      // names of listed co-brigadiers, for the preview
   };
 
   function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
@@ -66,7 +67,8 @@
       email: showEmail.checked && state.profile ? state.profile.email : null,
       phone: showPhone.checked && PHONE_RE.test(phoneInput.value.trim()) ? phoneInput.value.trim() : null,
       former_member: !state.hasAccess,
-      foreign_member: foreign.checked
+      foreign_member: foreign.checked,
+      co_brigadiers: state.coBrigadiers
     };
     cardPreview.replaceChildren(P.renderCard(person, currentPhotoUrl(), { headingTag: 'h3' }));
     if (!listed.checked) {
@@ -199,6 +201,29 @@
     return 'Could not save. ' + N.friendlyError(error);
   }
 
+  // Co-brigadiers = everyone sharing a brigadier group with this card (listed cards only, as in the
+  // directory). Members ask the database for their own; admins work it out from the group tables.
+  async function loadCoBrigadiers(profileId, asAdmin) {
+    try {
+      if (!asAdmin) {
+        var mine = await client.rpc('my_co_brigadiers');
+        return mine.error ? [] : (mine.data || []);
+      }
+      var groups = await client.from('brigadier_group_members').select('group_id').eq('profile_id', profileId);
+      if (groups.error || !groups.data.length) return [];
+      var ids = groups.data.map(function (g) { return g.group_id; });
+      var others = await client.from('brigadier_group_members')
+        .select('profile_id, profiles(display_name, listed)').in('group_id', ids).neq('profile_id', profileId);
+      if (others.error) return [];
+      var names = others.data
+        .filter(function (o) { return o.profiles && o.profiles.listed; })
+        .map(function (o) { return o.profiles.display_name; });
+      return names.filter(function (n, i) { return names.indexOf(n) === i; }).sort();
+    } catch (e) {
+      return [];
+    }
+  }
+
   async function load(access) {
     var mine = access.profile;
     var param = new URLSearchParams(window.location.search).get('profile');
@@ -218,6 +243,8 @@
       var allow = await client.from('allowed_emails').select('email').eq('email', profile.email).maybeSingle();
       state.hasAccess = !allow.error && !!allow.data;
     }
+
+    state.coBrigadiers = await loadCoBrigadiers(profile.id, state.editingOther);
 
     if (profile.photo_path) {
       try {

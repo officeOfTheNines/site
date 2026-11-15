@@ -49,7 +49,20 @@
   var deleteDialog = document.getElementById('delete-dialog');
   var deleteNameNode = document.getElementById('delete-name');
 
+  var groupsLoading = document.getElementById('groups-loading');
+  var groupsEmpty = document.getElementById('groups-empty');
+  var groupsList = document.getElementById('groups-list');
+  var groupForm = document.getElementById('group-form');
+  var groupFormTitle = document.getElementById('group-form-title');
+  var groupSelects = Array.prototype.slice.call(document.querySelectorAll('.group-member'));
+  var groupSubmit = document.getElementById('group-submit');
+  var groupCancel = document.getElementById('group-cancel');
+  var groupDeleteDialog = document.getElementById('group-delete-dialog');
+  var groupDeleteName = document.getElementById('group-delete-name');
+
   var myEmail = '';
+  var groups = [];   // [{ id, memberIds: [profile ids] }]
+  var editingGroupId = null;
   var access = [];   // allowed_emails rows
   var cards = [];    // profiles rows
 
@@ -105,6 +118,16 @@
     if (c.error) throw c.error;
     var m = await client.from('members').select('id, last_login');
     if (m.error) throw m.error;
+    var g = await client.from('brigadier_groups').select('id').order('id', { ascending: true });
+    if (g.error) throw g.error;
+    var gm = await client.from('brigadier_group_members').select('group_id, profile_id');
+    if (gm.error) throw gm.error;
+    groups = (g.data || []).map(function (row) {
+      return {
+        id: row.id,
+        memberIds: (gm.data || []).filter(function (x) { return x.group_id === row.id; }).map(function (x) { return x.profile_id; })
+      };
+    });
 
     var lastLogin = {};
     (m.data || []).forEach(function (row) { lastLogin[row.id] = row.last_login; });
@@ -116,12 +139,14 @@
 
     renderAccess();
     renderCards();
+    renderGroups();
   }
 
   function refresh() {
     return loadAll().catch(function (error) {
       accessLoading.hidden = true;
       cardsLoading.hidden = true;
+      groupsLoading.hidden = true;
       showError('Could not load members. ' + dbError(error));
     });
   }
@@ -390,6 +415,110 @@
       button.disabled = false;
       await refresh();
     }
+  }
+
+  // ---- Brigadier groups ----
+
+  function cardName(id) {
+    var card = cards.find(function (c) { return c.id === id; });
+    return card ? (card.display_name || card.email) : 'Deleted card';
+  }
+
+  function groupsOf(profileId) {
+    return groups.filter(function (g) { return g.memberIds.indexOf(profileId) !== -1; }).map(function (g) { return g.id; });
+  }
+
+  function groupLabel(group) {
+    var names = group.memberIds.map(cardName).sort(function (a, b) { return collator.compare(a, b); });
+    return names.length ? P.joinNames(names) : '(no members)';
+  }
+
+  function renderGroups() {
+    groupsList.replaceChildren();
+    groups.forEach(function (group) {
+      var label = groupLabel(group);
+      var edit = el('button', { type: 'button', className: 'button secondary', 'aria-label': 'Edit group ' + group.id + ': ' + label, text: 'Edit' });
+      edit.addEventListener('click', function () { startEditGroup(group); });
+      var del = el('button', { type: 'button', className: 'button danger', 'aria-label': 'Delete group ' + group.id + ': ' + label, text: 'Delete' });
+      del.addEventListener('click', function () { deleteGroup(group, label, del); });
+      groupsList.appendChild(el('li', null, [
+        el('span', null, [el('span', { className: 'group-number', text: 'Group ' + group.id }), label]),
+        el('span', { className: 'row-actions' }, [edit, del])
+      ]));
+    });
+    groupsLoading.hidden = true;
+    groupsEmpty.hidden = groups.length > 0;
+    groupsList.hidden = groups.length === 0;
+    fillGroupSelects();
+  }
+
+  // Each select lists every card; people already in another group are marked, not blocked.
+  function fillGroupSelects() {
+    var chosen = groupSelects.map(function (s) { return s.value; });
+    groupSelects.forEach(function (select, index) {
+      select.replaceChildren(el('option', { value: '', text: index === 2 ? 'No third member' : 'Choose a member' }));
+      cards.forEach(function (card) {
+        var others = groupsOf(card.id).filter(function (id) { return id !== editingGroupId; });
+        var text = (card.display_name || card.email) + (others.length ? ' (in group ' + others.join(', ') + ')' : '');
+        select.appendChild(el('option', { value: card.id, text: text }));
+      });
+      select.value = chosen[index] || '';
+    });
+  }
+
+  function resetGroupForm() {
+    editingGroupId = null;
+    groupSelects.forEach(function (s) { s.value = ''; });
+    groupFormTitle.textContent = 'New brigadier group';
+    groupSubmit.textContent = 'Create group';
+    groupCancel.hidden = true;
+    fillGroupSelects();
+  }
+
+  function startEditGroup(group) {
+    editingGroupId = group.id;
+    fillGroupSelects();
+    groupSelects.forEach(function (s, i) { s.value = group.memberIds[i] || ''; });
+    groupFormTitle.textContent = 'Edit group ' + group.id;
+    groupSubmit.textContent = 'Save group';
+    groupCancel.hidden = false;
+    if (group.memberIds.length > groupSelects.length) {
+      showError('This group has more than three members. Saving here keeps only the three shown.');
+    }
+    groupSelects[0].focus();
+  }
+
+  groupCancel.addEventListener('click', function () { resetGroupForm(); showStatus(''); });
+
+  groupForm.addEventListener('submit', async function (event) {
+    event.preventDefault();
+    var ids = groupSelects.map(function (s) { return s.value; }).filter(Boolean);
+    var unique = ids.filter(function (id, i) { return ids.indexOf(id) === i; });
+    if (unique.length !== ids.length) { showError('The same person is chosen twice.'); return; }
+    if (unique.length < 2) { showError('Choose at least two members for a brigadier group.'); groupSelects[0].focus(); return; }
+
+    groupSubmit.disabled = true;
+    showError('');
+    var wasEditing = editingGroupId;
+    var result = await client.rpc('admin_save_brigadier_group', { p_group_id: editingGroupId, p_profile_ids: unique });
+    groupSubmit.disabled = false;
+    if (result.error) { showError('Could not save the group. ' + dbError(result.error)); await refresh(); return; }
+    showStatus((wasEditing ? 'Group ' + wasEditing + ' saved: ' : 'Group ' + result.data + ' created: ') + P.joinNames(unique.map(cardName)) + '.');
+    resetGroupForm();
+    await refresh();
+  });
+
+  async function deleteGroup(group, label, button) {
+    groupDeleteName.textContent = group.id + ' (' + label + ')';
+    if (!(await confirmDialog(groupDeleteDialog))) return;
+    button.disabled = true;
+    showError('');
+    var result = await client.rpc('admin_delete_brigadier_group', { p_group_id: group.id });
+    button.disabled = false;
+    if (result.error) { showError('Could not delete the group. ' + dbError(result.error)); }
+    else { showStatus('Group ' + group.id + ' was deleted.'); }
+    if (editingGroupId === group.id) resetGroupForm();
+    await refresh();
   }
 
   N.guardMembersPage().then(function (accessInfo) {
