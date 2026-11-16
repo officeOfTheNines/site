@@ -13,7 +13,7 @@
     N.showState('ready');
 
     // A gentle prompt until the member has saved their profile themselves at least once.
-    if (access.profile && !access.profile.member_updated_on) {
+    if (access.profile && access.card && !access.card.member_updated_on) {
       document.getElementById('profile-prompt').hidden = false;
     }
   });

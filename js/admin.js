@@ -48,6 +48,8 @@
   var removeHideRow = document.getElementById('remove-hide-row');
   var deleteDialog = document.getElementById('delete-dialog');
   var deleteNameNode = document.getElementById('delete-name');
+  var deleteNotes = document.getElementById('delete-notes');
+  var clubId = N.clubId;
 
   var groupsLoading = document.getElementById('groups-loading');
   var groupsEmpty = document.getElementById('groups-empty');
@@ -69,7 +71,7 @@
   var myEmail = '';
   var groups = [];   // [{ id, memberIds: [profile ids] }]
   var editingGroupId = null;
-  var access = [];   // allowed_emails rows
+  var access = [];   // this club's club_access rows
   var cards = [];    // profiles rows
 
   function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
@@ -116,17 +118,23 @@
   // ---- Loading ----
 
   async function loadAll() {
-    var a = await client.from('allowed_emails').select('email, role, added_by, added_on, needs_profile')
+    // everything below is for this site's club only
+    var a = await client.from('club_access').select('email, role, added_by, added_on, needs_profile')
+      .eq('club_id', clubId)
       .order('role', { ascending: true }).order('email', { ascending: true });
     if (a.error) throw a.error;
-    var c = await client.from('profiles')
-      .select('id, email, member_id, display_name, listed, foreign_member, photo_path, updated_on');
+    var c = await client.from('club_profiles')
+      .select('listed, foreign_member, profiles(id, email, member_id, display_name, photo_path)')
+      .eq('club_id', clubId);
     if (c.error) throw c.error;
     var m = await client.from('members').select('id, last_login');
     if (m.error) throw m.error;
-    var g = await client.from('brigadier_groups').select('id').order('id', { ascending: true });
+    var g = await client.from('brigadier_groups').select('id').eq('club_id', clubId).order('id', { ascending: true });
     if (g.error) throw g.error;
-    var gm = await client.from('brigadier_group_members').select('group_id, profile_id');
+    var groupIds = (g.data || []).map(function (row) { return row.id; });
+    var gm = groupIds.length
+      ? await client.from('brigadier_group_members').select('group_id, profile_id').in('group_id', groupIds)
+      : { data: [], error: null };
     if (gm.error) throw gm.error;
     groups = (g.data || []).map(function (row) {
       return {
@@ -138,9 +146,13 @@
     var lastLogin = {};
     (m.data || []).forEach(function (row) { lastLogin[row.id] = row.last_login; });
     access = a.data || [];
-    cards = (c.data || []).map(function (row) {
-      row.last_login = row.member_id ? lastLogin[row.member_id] : null;
-      return row;
+    cards = (c.data || []).filter(function (row) { return row.profiles; }).map(function (row) {
+      var p = row.profiles;
+      return {
+        id: p.id, email: p.email, member_id: p.member_id, display_name: p.display_name, photo_path: p.photo_path,
+        listed: row.listed, foreign_member: row.foreign_member,
+        last_login: p.member_id ? lastLogin[p.member_id] : null
+      };
     }).sort(function (x, y) { return collator.compare(x.display_name || '', y.display_name || ''); });
 
     renderAccess();
@@ -249,7 +261,7 @@
     button.disabled = true;
     showError('');
     var hide = !!card && card.listed && removeHide.checked;
-    var result = await client.rpc('admin_remove_access', { p_email: email, p_hide: hide });
+    var result = await client.rpc('admin_remove_access', { p_club: clubId, p_email: email, p_hide: hide });
     button.disabled = false;
     if (result.error) { showError(dbError(result.error)); await refresh(); return; }
     var note = '';
@@ -262,7 +274,8 @@
   async function setNeedsProfile(email, value, button) {
     button.disabled = true;
     showError('');
-    var result = await client.from('allowed_emails').update({ needs_profile: value }).eq('email', email).select('email');
+    var result = await client.from('club_access').update({ needs_profile: value })
+      .eq('club_id', clubId).eq('email', email).select('email');
     button.disabled = false;
     if (result.error || !result.data || result.data.length !== 1) {
       showError('Could not update ' + email + '. ' + (result.error ? dbError(result.error) : 'Please reload and try again.'));
@@ -304,6 +317,7 @@
     addSubmit.disabled = true;
     showError('');
     var result = await client.rpc('admin_add_member', {
+      p_club: clubId,
       p_email: email,
       p_display_name: name || (existingCard && existingCard.display_name) || email.split('@')[0],
       p_role: addRole.value === 'admin' ? 'admin' : 'member',
@@ -361,8 +375,15 @@
         text: card.listed ? 'Hide' : 'Show'
       });
       toggle.addEventListener('click', function () { setListed(card, !card.listed, toggle); });
-      var del = el('button', { type: 'button', className: 'button danger', 'aria-label': 'Delete the card of ' + name, text: 'Delete' });
-      del.addEventListener('click', function () { deleteCard(card, del); });
+      var del = el('button', { type: 'button', className: 'button danger', 'aria-label': 'Remove ' + name + ' from the club', text: 'Remove from club' });
+      if (card.email === myEmail) {
+        del.setAttribute('aria-disabled', 'true');
+        del.title = 'You cannot remove yourself.';
+      }
+      del.addEventListener('click', function () {
+        if (card.email === myEmail) { showError('You cannot remove yourself. Ask another admin.'); return; }
+        removeFromClub(card, del);
+      });
       var rowButtons = [edit, toggle, del];
       // people without access are not in the Access table, so offer it here
       if (!role) rowButtons.splice(1, 0, makeChangeEmailButton(card.email, false));
@@ -392,7 +413,8 @@
   async function setListed(card, value, button) {
     button.disabled = true;
     showError('');
-    var result = await client.from('profiles').update({ listed: value }).eq('id', card.id).select('id');
+    var result = await client.from('club_profiles').update({ listed: value })
+      .eq('club_id', clubId).eq('profile_id', card.id).select('profile_id');
     button.disabled = false;
     var name = card.display_name || card.email;
     if (result.error || !result.data || result.data.length !== 1) {
@@ -403,24 +425,39 @@
     await refresh();
   }
 
-  async function deleteCard(card, button) {
+  // "Remove from club": deletes this club's access, card and brigadier places for the person.
+  // The database says first what else would happen, so the admin confirms it knowingly:
+  // groups left with fewer than two members, and whether the person then belongs to no club.
+  async function removeFromClub(card, button) {
     var name = card.display_name || card.email;
+    button.disabled = true;
+    showError('');
+    var preview = await client.rpc('admin_remove_from_club_preview', { p_club: clubId, p_email: card.email });
+    button.disabled = false;
+    if (preview.error) { showError('Could not check ' + name + '. ' + dbError(preview.error)); return; }
+    var info = (preview.data && preview.data[0]) || { small_group_ids: [], deletes_profile: false, photo_path: null };
+    var small = info.small_group_ids || [];
+
     deleteNameNode.textContent = name + ' (' + card.email + ')';
+    deleteNotes.replaceChildren();
+    if (small.length) {
+      deleteNotes.appendChild(el('li', { text: 'Brigadier group ' + small.join(', ') + ' would be left with fewer than two members, so ' + (small.length === 1 ? 'it' : 'they') + ' will be deleted too.' }));
+    }
+    if (info.deletes_profile) {
+      deleteNotes.appendChild(el('li', { text: 'They are in no other club, so their profile, photo and sign-in record are deleted as well.' }));
+    } else {
+      deleteNotes.appendChild(el('li', { text: 'They stay in their other club(s), with their profile and photo.' }));
+    }
     if (!(await confirmDialog(deleteDialog))) return;
 
     button.disabled = true;
-    showError('');
     try {
-      if (card.photo_path) await P.removePhoto(card.id);
-      var result = await client.from('profiles').delete().eq('id', card.id).select('id');
+      if (info.deletes_profile && info.photo_path) await P.removePhoto(card.id);
+      var result = await client.rpc('admin_remove_from_club', { p_club: clubId, p_email: card.email, p_delete_small_groups: small.length > 0 });
       if (result.error) throw result.error;
-      if (!result.data || result.data.length !== 1) throw new Error('Nothing was deleted. Please reload and try again.');
-      var row = accessRow(card.email);
-      showStatus('The card of ' + name + ' was deleted.' + (row && row.needs_profile !== false
-        ? ' They still have access; a blank card is created when they next sign in. Use "No card" in the Access table to stop that.'
-        : ''));
+      showStatus(name + ' was removed from ' + N.clubName + '.' + (small.length ? ' Brigadier group ' + small.join(', ') + ' was deleted.' : ''));
     } catch (error) {
-      showError('Could not delete the card of ' + name + '. ' + dbError(error));
+      showError('Could not remove ' + name + '. ' + (error.message || dbError(error)));
     } finally {
       button.disabled = false;
       await refresh();
@@ -565,7 +602,7 @@
     groupSubmit.disabled = true;
     showError('');
     var wasEditing = editingGroupId;
-    var result = await client.rpc('admin_save_brigadier_group', { p_group_id: editingGroupId, p_profile_ids: unique });
+    var result = await client.rpc('admin_save_brigadier_group', { p_club: clubId, p_group_id: editingGroupId, p_profile_ids: unique });
     groupSubmit.disabled = false;
     if (result.error) { showError('Could not save the group. ' + dbError(result.error)); await refresh(); return; }
     showStatus((wasEditing ? 'Group ' + wasEditing + ' saved: ' : 'Group ' + result.data + ' created: ') + P.joinNames(unique.map(cardName)) + '.');
@@ -578,7 +615,7 @@
     if (!(await confirmDialog(groupDeleteDialog))) return;
     button.disabled = true;
     showError('');
-    var result = await client.rpc('admin_delete_brigadier_group', { p_group_id: group.id });
+    var result = await client.rpc('admin_delete_brigadier_group', { p_club: clubId, p_group_id: group.id });
     button.disabled = false;
     if (result.error) { showError('Could not delete the group. ' + dbError(result.error)); }
     else { showStatus('Group ' + group.id + ' was deleted.'); }
@@ -590,6 +627,7 @@
     if (!accessInfo) return;
     if (accessInfo.role !== 'admin') { N.showState('not-admin'); return; }
     myEmail = (accessInfo.session.user.email || '').toLowerCase();
+    N.setText('[data-slot="club-name"]', N.clubName);
     N.showState('ready');
     refresh();
   });

@@ -16,7 +16,9 @@
   var client = N.client;
   var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   var PHONE_RE = /^[0-9+() .-]{5,30}$/;
-  var FIELDS = 'id, email, member_id, display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member, member_updated_on';
+  // Shared profile (same in every club) + this club's card (bio, visibility, admin settings).
+  var PROFILE_FIELDS = 'id, email, member_id, display_name, phone, photo_path';
+  var CARD_FIELDS = 'bio, show_email, show_phone, listed, foreign_member, member_updated_on';
 
   var form = document.getElementById('profile-form');
   var nameInput = document.getElementById('display-name');
@@ -152,24 +154,25 @@
         photoPath = null;
       }
 
-      var row = {
-        display_name: name,
-        bio: bio || null,
-        phone: phone || null,
-        show_email: showEmail.checked,
-        show_phone: showPhone.checked,
-        photo_path: photoPath
-      };
+      // shared details: name, phone and photo appear in every club the person belongs to
+      var shared = await client.from('profiles')
+        .update({ display_name: name, phone: phone || null, photo_path: photoPath })
+        .eq('id', id).select(PROFILE_FIELDS);
+      if (shared.error) throw shared.error;
+      if (!shared.data || shared.data.length !== 1) throw new Error('The profile could not be saved. Please reload and try again.');
+
+      // this club's card
+      var cardRow = { bio: bio || null, show_email: showEmail.checked, show_phone: showPhone.checked };
       if (state.isAdmin) {
-        row.listed = listed.checked;
-        row.foreign_member = foreign.checked;
+        cardRow.listed = listed.checked;
+        cardRow.foreign_member = foreign.checked;
       }
+      var card = await client.from('club_profiles').update(cardRow)
+        .eq('club_id', N.clubId).eq('profile_id', id).select(CARD_FIELDS);
+      if (card.error) throw card.error;
+      if (!card.data || card.data.length !== 1) throw new Error('The card could not be saved. Please reload and try again.');
 
-      var result = await client.from('profiles').update(row).eq('id', id).select(FIELDS);
-      if (result.error) throw result.error;
-      if (!result.data || result.data.length !== 1) throw new Error('The profile could not be saved. Please reload and try again.');
-
-      state.profile = result.data[0];
+      state.profile = Object.assign({}, shared.data[0], card.data[0]);
       if (state.pendingBlob) {
         // keep showing the local copy; a fresh signed link is made on the next visit
         state.photoUrl = state.pendingUrl;
@@ -195,7 +198,7 @@
       return 'You do not have permission to change this profile.';
     }
     if (/profiles_phone_shape/.test(msg)) return 'That phone number has characters we cannot use.';
-    if (/profiles_bio_length/.test(msg)) return 'Please keep the bio to 500 characters or fewer.';
+    if (/bio_length/.test(msg)) return 'Please keep the bio to 500 characters or fewer.';
     if (/display_name/.test(msg)) return 'Please enter a display name of 1 to 80 characters.';
     if (/payload too large|exceeded the maximum/i.test(msg)) return 'That photo is too large. Please try another one.';
     return 'Could not save. ' + N.friendlyError(error);
@@ -206,18 +209,25 @@
   async function loadCoBrigadiers(profileId, asAdmin) {
     try {
       if (!asAdmin) {
-        var mine = await client.rpc('my_co_brigadiers');
+        var mine = await client.rpc('my_co_brigadiers', { p_club: N.clubId });
         return mine.error ? [] : (mine.data || []);
       }
-      var groups = await client.from('brigadier_group_members').select('group_id').eq('profile_id', profileId);
-      if (groups.error || !groups.data.length) return [];
-      var ids = groups.data.map(function (g) { return g.group_id; });
-      var others = await client.from('brigadier_group_members')
-        .select('profile_id, profiles(display_name, listed)').in('group_id', ids).neq('profile_id', profileId);
-      if (others.error) return [];
-      var names = others.data
-        .filter(function (o) { return o.profiles && o.profiles.listed; })
-        .map(function (o) { return o.profiles.display_name; });
+      // this club's groups that include the card
+      var clubGroups = await client.from('brigadier_groups').select('id').eq('club_id', N.clubId);
+      if (clubGroups.error || !clubGroups.data.length) return [];
+      var mineIn = await client.from('brigadier_group_members').select('group_id')
+        .eq('profile_id', profileId).in('group_id', clubGroups.data.map(function (g) { return g.id; }));
+      if (mineIn.error || !mineIn.data.length) return [];
+      var others = await client.from('brigadier_group_members').select('profile_id')
+        .in('group_id', mineIn.data.map(function (g) { return g.group_id; })).neq('profile_id', profileId);
+      if (others.error || !others.data.length) return [];
+      // names of those co-brigadiers whose card in this club is listed
+      var cards = await client.from('club_profiles').select('listed, profiles(display_name)')
+        .eq('club_id', N.clubId).in('profile_id', others.data.map(function (o) { return o.profile_id; }));
+      if (cards.error) return [];
+      var names = cards.data
+        .filter(function (c) { return c.listed && c.profiles; })
+        .map(function (c) { return c.profiles.display_name; });
       return names.filter(function (n, i) { return names.indexOf(n) === i; }).sort();
     } catch (e) {
       return [];
@@ -234,13 +244,19 @@
     if (param && !UUID_RE.test(param)) { N.showState('not-found'); return; }
     if (!param && !mine) { N.showState('no-card'); return; }
 
-    var result = await client.from('profiles').select(FIELDS).eq('id', param || mine.id).maybeSingle();
+    var targetId = param || mine.id;
+    var result = await client.from('profiles').select(PROFILE_FIELDS).eq('id', targetId).maybeSingle();
     if (result.error) throw result.error;
     if (!result.data) { N.showState('not-found'); return; }
-    var profile = state.profile = result.data;
+    var cardResult = await client.from('club_profiles').select(CARD_FIELDS)
+      .eq('club_id', N.clubId).eq('profile_id', targetId).maybeSingle();
+    if (cardResult.error) throw cardResult.error;
+    if (!cardResult.data) { N.showState(state.editingOther ? 'not-found' : 'no-card'); return; }
+    var profile = state.profile = Object.assign({}, result.data, cardResult.data);
 
     if (state.editingOther) {
-      var allow = await client.from('allowed_emails').select('email').eq('email', profile.email).maybeSingle();
+      var allow = await client.from('club_access').select('email')
+        .eq('club_id', N.clubId).eq('email', profile.email).maybeSingle();
       state.hasAccess = !allow.error && !!allow.data;
     }
 

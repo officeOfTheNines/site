@@ -42,7 +42,7 @@
   }
 
   async function load() {
-    var result = await N.client.rpc('directory');
+    var result = await N.client.rpc('directory', { p_club: N.clubId });
     if (result.error) throw result.error;
     var rows = (result.data || []).slice().sort(function (a, b) {
       return collator.compare(a.display_name || '', b.display_name || '');

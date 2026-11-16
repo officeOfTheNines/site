@@ -137,33 +137,48 @@
     window.location.replace(url.href);
   }
 
-  // Works out who the visitor is and what they may see.
-  // Returns { session, role, profile } where role is 'admin', 'member' or null,
-  // and profile is their directory card { id, display_name, email, member_updated_on } (or null).
+  var clubId = cfg.CLUB_ID;
+
+  // Works out who the visitor is and what they may see in THIS site's club.
+  // Returns { session, role, profile, card } where role is 'admin', 'member' or null,
+  // profile is their shared profile { id, display_name, email } (or null), and card is their card in
+  // this club { member_updated_on } (or null: office/staff accounts have none).
   async function loadAccess() {
     var sessionResult = await client.auth.getSession();
     if (sessionResult.error) throw sessionResult.error;
     var session = sessionResult.data.session;
-    if (!session) return { session: null, role: null, profile: null };
+    if (!session) return { session: null, role: null, profile: null, card: null };
 
-    var access = await client.rpc('my_access');
+    var access = await client.rpc('my_access', { p_club: clubId });
     if (access.error) throw access.error;
     var role = access.data || null;
-    if (!role) return { session: session, role: null, profile: null };
+    if (!role) return { session: session, role: null, profile: null, card: null };
 
     var claim = await client.rpc('claim_membership');
     if (claim.error) throw claim.error;
 
-    // The caller's profile (it may have been created by an admin before their first sign-in;
-    // claim_membership() has just linked it, or created a blank one).
+    // The caller's shared profile (it may have been created by an admin before their first sign-in;
+    // claim_membership() has just linked it, or created a blank one) and their card in this club.
     var me = await client
       .from('profiles')
-      .select('id, display_name, email, member_updated_on')
+      .select('id, display_name, email')
       .eq('member_id', session.user.id)
       .maybeSingle();
     if (me.error) throw me.error;
 
-    return { session: session, role: role, profile: me.data };
+    var card = null;
+    if (me.data) {
+      var c = await client
+        .from('club_profiles')
+        .select('member_updated_on')
+        .eq('club_id', clubId)
+        .eq('profile_id', me.data.id)
+        .maybeSingle();
+      if (c.error) throw c.error;
+      card = c.data;
+    }
+
+    return { session: session, role: role, profile: me.data, card: card };
   }
 
   // Used by every page under members/. Shows "loading" until the check is done, then:
@@ -217,6 +232,8 @@
 
   window.Nines = {
     client: client,
+    clubId: clubId,
+    clubName: cfg.CLUB_NAME,
     urlParams: urlParams,
     siteUrl: siteUrl,
     el: el,
