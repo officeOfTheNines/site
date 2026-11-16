@@ -205,11 +205,12 @@
 
     <dialog id="delete-dialog" class="dialog" aria-labelledby="delete-title">
       <form method="dialog">
-        <h2 id="delete-title">Delete this profile?</h2>
-        <p>This permanently deletes the directory card of <strong id="delete-name"></strong>: name, bio, phone,
-          photo and settings. It cannot be undone. Their access is not changed.</p>
+        <h2 id="delete-title">Remove from <span data-slot="club-name">the club</span>?</h2>
+        <p>This deletes <strong id="delete-name"></strong>'s access, card and brigadier group places in
+          <span data-slot="club-name">this club</span>. It cannot be undone. Other clubs are not changed.</p>
+        <ul id="delete-notes" class="dialog-notes"></ul>
         <div class="actions">
-          <button type="submit" value="confirm" class="button danger">Delete profile</button>
+          <button type="submit" value="confirm" class="button danger" id="delete-confirm">Remove from club</button>
           <button type="submit" value="cancel" class="button secondary">Cancel</button>
         </div>
       </form>

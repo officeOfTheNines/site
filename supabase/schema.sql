@@ -1,38 +1,57 @@
--- The Nines members site: complete database schema.
+-- The Nines members site: complete database schema (several clubs).
 --
--- For a BRAND-NEW project: run this whole file in the Supabase SQL Editor (safe to run again).
+-- For a BRAND-NEW project: run this whole file in the Supabase SQL Editor. It runs as one
+-- transaction and is safe to run again.
 -- For a project that is already running: run only the new file(s) in supabase/migrations/ instead.
+-- This file always matches the result of running every migration in order.
 --
--- The file is made of one section per step, applied in order. A later step may change things an
--- earlier step created.
---
--- ===========================================================================
--- STEP 1: allowlist, members, admin
--- ===========================================================================
---
--- Run this whole file in the Supabase dashboard: SQL Editor -> New query -> paste -> Run.
--- It is safe to run more than once.
---
--- Security model:
---   * Anyone can create an account, but an account only gets access when its email is
---     confirmed AND its address is in public.allowed_emails.
---   * Every row-level security policy goes through is_member() or is_admin().
---   * The "anon" role (the public key used before login) gets no table or function access.
+-- Concepts:
+--   clubs           = The Nines (1), Les Ronds (2)
+--   club_access     = who may open each club's member area, and their role there (one row per club)
+--   super_admins    = people who manage every club
+--   members         = one login record per person who has signed in
+--   profiles        = one shared profile per person (name, phone, photo), used by all their clubs
+--   club_profiles   = a person's card in one club (bio, listed, foreign member, show email/phone)
+--   brigadier_groups / brigadier_group_members = the teams that organise each club's dinners
+-- Everything is enforced with row-level security; the publishable (anon) key can read nothing.
+
+begin;
 
 -- ---------------------------------------------------------------------------
 -- Tables
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.allowed_emails (
-  email     text primary key,
-  role      text not null default 'member',
-  added_by  text,
-  added_on  timestamptz not null default now(),
-  constraint allowed_emails_role_check  check (role in ('member', 'admin')),
-  constraint allowed_emails_email_lower check (email = lower(btrim(email))),
-  constraint allowed_emails_email_shape check (email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
+create table if not exists public.clubs (
+  id          integer primary key,
+  slug        text not null unique,
+  name        text not null,
+  site_url    text,
+  map_url     text,
+  created_on  timestamptz not null default now()
 );
 
+-- Access, per club (one row per person per club).
+create table if not exists public.club_access (
+  club_id        integer not null references public.clubs (id),
+  email          text not null,
+  role           text not null default 'member',
+  needs_profile  boolean not null default true,
+  added_by       text,
+  added_on       timestamptz not null default now(),
+  primary key (club_id, email),
+  constraint club_access_role_check  check (role in ('member', 'admin')),
+  constraint club_access_email_lower check (email = lower(btrim(email))),
+  constraint club_access_email_shape check (email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$')
+);
+
+create table if not exists public.super_admins (
+  email     text primary key,
+  added_by  text,
+  added_on  timestamptz not null default now(),
+  constraint super_admins_email_lower check (email = lower(btrim(email)))
+);
+
+-- Login records: one row per person who has signed in.
 create table if not exists public.members (
   id            uuid primary key references auth.users (id) on delete cascade,
   email         text,
@@ -42,8 +61,74 @@ create table if not exists public.members (
   constraint members_display_name_length check (display_name is null or char_length(display_name) between 1 and 80)
 );
 
-alter table public.allowed_emails enable row level security;
-alter table public.members        enable row level security;
+-- Shared profile: one per person, used by every club they belong to.
+create table if not exists public.profiles (
+  id            uuid primary key default gen_random_uuid(),
+  email         text not null,
+  member_id     uuid references public.members (id) on delete set null,
+  display_name  text not null,
+  phone         text,
+  photo_path    text,
+  created_on    timestamptz not null default now(),
+  updated_on    timestamptz not null default now(),
+  constraint profiles_email_key          unique (email),
+  constraint profiles_member_id_key      unique (member_id),
+  constraint profiles_email_lower        check (email = lower(btrim(email))),
+  constraint profiles_email_shape        check (email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
+  constraint profiles_display_name_shape check (btrim(display_name) <> '' and char_length(display_name) <= 80),
+  constraint profiles_phone_shape        check (phone is null or phone ~ '^[0-9+() .-]{5,30}$'),
+  constraint profiles_photo_path         check (photo_path is null or photo_path = id::text || '/avatar.jpg')
+);
+
+-- A person's card in one club: what that club's members see, and that club's settings for them.
+create table if not exists public.club_profiles (
+  club_id            integer not null references public.clubs (id) on delete cascade,
+  profile_id         uuid not null references public.profiles (id) on delete cascade,
+  bio                text,
+  listed             boolean not null default true,
+  foreign_member     boolean not null default false,
+  show_email         boolean not null default false,
+  show_phone         boolean not null default false,
+  member_updated_on  timestamptz,   -- last time the person saved this card themselves (null = prompt them)
+  created_on         timestamptz not null default now(),
+  updated_on         timestamptz not null default now(),
+  primary key (club_id, profile_id),
+  constraint club_profiles_bio_length check (bio is null or char_length(bio) <= 500)
+);
+create index if not exists club_profiles_profile_idx on public.club_profiles (profile_id);
+
+-- Brigadier groups: the standing teams (usually 2, rarely 3) that organise a club's dinners.
+-- Next step (not built yet): dinners.brigadier_group_id integer references brigadier_groups (id).
+create table if not exists public.brigadier_groups (
+  id          integer generated always as identity primary key,
+  created_on  timestamptz not null default now(),
+  club_id     integer not null default 1 references public.clubs (id)
+);
+
+create table if not exists public.brigadier_group_members (
+  group_id    integer not null references public.brigadier_groups (id) on delete cascade,
+  profile_id  uuid    not null references public.profiles (id) on delete cascade,
+  added_on    timestamptz not null default now(),
+  primary key (group_id, profile_id)
+);
+create index if not exists brigadier_group_members_profile_idx on public.brigadier_group_members (profile_id);
+
+-- ---------------------------------------------------------------------------
+-- Clubs and the first admins (left alone if already present)
+-- ---------------------------------------------------------------------------
+
+insert into public.clubs (id, slug, name, site_url, map_url) values
+  (1, 'nines',    'The Nines', 'https://site.thenines.club',     'https://map.thenines.club'),
+  (2, 'lesronds', 'Les Ronds', 'https://lesronds.thenines.club', 'https://ronds.thenines.club')
+on conflict (id) do nothing;
+
+insert into public.super_admins (email, added_by) values ('jbsolanet@gmail.com', 'schema.sql')
+on conflict (email) do nothing;
+
+insert into public.club_access (club_id, email, role, needs_profile, added_by) values
+  (1, 'office@thenines.club', 'admin', false, 'schema.sql'),
+  (1, 'jbsolanet@gmail.com',  'admin', true,  'schema.sql')
+on conflict (club_id, email) do nothing;
 
 -- ---------------------------------------------------------------------------
 -- Helper functions (SECURITY DEFINER, empty search_path, fully qualified names)
@@ -63,78 +148,131 @@ as $$
     and u.email_confirmed_at is not null;
 $$;
 
-create or replace function public.my_access()
+create or replace function public.is_super_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.super_admins s where s.email = public.current_confirmed_email()
+  );
+$$;
+
+-- The caller's role in a club: 'admin', 'member', or null (no access). Super admins are admins everywhere.
+create or replace function public.my_access(p_club integer)
 returns text
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select a.role
-  from public.allowed_emails a
-  where a.email = public.current_confirmed_email();
+  select case
+    when public.current_confirmed_email() is null then null
+    when not exists (select 1 from public.clubs c where c.id = p_club) then null
+    when public.is_super_admin() then 'admin'
+    else (select a.role from public.club_access a
+          where a.club_id = p_club and a.email = public.current_confirmed_email())
+  end;
 $$;
 
-create or replace function public.is_member()
+create or replace function public.is_member(p_club integer)
 returns boolean
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select public.my_access() is not null;
+  select public.my_access(p_club) is not null;
 $$;
 
-create or replace function public.is_admin()
+create or replace function public.is_admin(p_club integer)
 returns boolean
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select coalesce(public.my_access() = 'admin', false);
+  select coalesce(public.my_access(p_club) = 'admin', false);
 $$;
 
--- Creates or refreshes the caller's members row. Does nothing for people not on the list.
-create or replace function public.claim_membership()
-returns void
-language plpgsql
-volatile
+-- True when the caller has access to at least one club.
+create or replace function public.has_any_access()
+returns boolean
+language sql
+stable
 security definer
 set search_path = ''
 as $$
-declare
-  u auth.users%rowtype;
-  default_name text;
-begin
-  if not public.is_member() then
-    return;
-  end if;
+  select public.is_super_admin()
+      or exists (select 1 from public.club_access a where a.email = public.current_confirmed_email());
+$$;
 
-  select * into u from auth.users where id = auth.uid();
+-- The clubs the caller can open, with their role in each (for club pickers).
+create or replace function public.my_clubs()
+returns table (club_id integer, slug text, name text, site_url text, map_url text, role text)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select c.id, c.slug, c.name, c.site_url, c.map_url, public.my_access(c.id)
+  from public.clubs c
+  where public.my_access(c.id) is not null
+  order by c.id;
+$$;
 
-  default_name := left(btrim(coalesce(
-    nullif(btrim(u.raw_user_meta_data ->> 'full_name'), ''),
-    nullif(btrim(u.raw_user_meta_data ->> 'name'), ''),
-    split_part(lower(u.email), '@', 1)
-  )), 80);
+-- The signed-in person's shared profile id, or null.
+create or replace function public.current_profile_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p.id
+  from public.profiles p
+  where p.member_id = auth.uid()
+    and public.has_any_access();
+$$;
 
-  insert into public.members (id, email, display_name, last_login)
-  values (u.id, lower(u.email), default_name, now())
-  on conflict (id) do update
-    set email      = excluded.email,
-        last_login = excluded.last_login,
-        -- keep a name the member has already chosen
-        display_name = coalesce(public.members.display_name, excluded.display_name);
-end;
+-- True when the caller may manage this profile: a super admin, or an admin of a club the person
+-- belongs to (has access to, or has a card in).
+create or replace function public.can_admin_profile(p_profile uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select public.is_super_admin()
+      or exists (select 1 from public.club_profiles cp
+                 where cp.profile_id = p_profile and public.is_admin(cp.club_id))
+      or exists (select 1 from public.profiles p
+                 join public.club_access a on a.email = p.email
+                 where p.id = p_profile and public.is_admin(a.club_id));
+$$;
+
+-- '<profile id>/avatar.jpg' -> the profile id; anything else -> null (never an error).
+create or replace function public.profile_id_from_path(p_path text)
+returns uuid
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when p_path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/avatar\.jpg$'
+      then split_part(p_path, '/', 1)::uuid
+  end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Triggers on allowed_emails
+-- Triggers
 -- ---------------------------------------------------------------------------
 
 -- Normalise the email and record who added it (the caller, not whatever the page sends).
-create or replace function public.allowed_emails_before_insert()
+create or replace function public.club_access_before_insert()
 returns trigger
 language plpgsql
 security definer
@@ -150,8 +288,9 @@ begin
 end;
 $$;
 
--- Stops: removing your own address (from the site), and deleting, demoting or renaming the last admin.
-create or replace function public.allowed_emails_protect_admins()
+-- Stops, per club: removing your own access (from the site), and deleting, demoting or moving the
+-- club's last admin. In the SQL editor auth.uid() is null, so the office can still fix things there.
+create or replace function public.club_access_protect_admins()
 returns trigger
 language plpgsql
 security definer
@@ -162,8 +301,6 @@ begin
     new.email := lower(btrim(new.email));
   end if;
 
-  -- Removing yourself is blocked when done through the site (auth.uid() is set).
-  -- In the SQL editor auth.uid() is null, so the office can still fix things there.
   if tg_op = 'DELETE'
      and auth.uid() is not null
      and old.email = (select lower(email) from auth.users where id = auth.uid()) then
@@ -172,14 +309,14 @@ begin
   end if;
 
   if old.role = 'admin'
-     and (tg_op = 'DELETE' or new.role <> 'admin' or new.email <> old.email) then
-    -- Serialise admin changes so two admins cannot remove each other at the same moment.
-    perform pg_advisory_xact_lock(hashtext('public.allowed_emails.admins'));
+     and (tg_op = 'DELETE' or new.role <> 'admin' or new.email <> old.email or new.club_id <> old.club_id) then
+    -- serialise admin changes per club so two admins cannot remove each other at the same moment
+    perform pg_advisory_xact_lock(hashtext('public.club_access.admins'), old.club_id);
     if not exists (
-      select 1 from public.allowed_emails
-      where role = 'admin' and email <> old.email
+      select 1 from public.club_access
+      where club_id = old.club_id and role = 'admin' and email <> old.email
     ) then
-      raise exception 'The last admin cannot be removed or demoted. Add another admin first.'
+      raise exception 'The last admin of this club cannot be removed or demoted. Add another admin first.'
         using errcode = 'P0001', hint = 'nines_last_admin';
     end if;
   end if;
@@ -191,244 +328,19 @@ begin
 end;
 $$;
 
--- When an address leaves the list, remove that person's members row too.
--- (It is created again automatically if the address is added back and they log in.)
-create or replace function public.allowed_emails_after_delete()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  delete from public.members where lower(email) = old.email;
-  return old;
-end;
-$$;
+drop trigger if exists club_access_before_insert on public.club_access;
+create trigger club_access_before_insert
+  before insert on public.club_access
+  for each row execute function public.club_access_before_insert();
 
-drop trigger if exists allowed_emails_before_insert on public.allowed_emails;
-create trigger allowed_emails_before_insert
-  before insert on public.allowed_emails
-  for each row execute function public.allowed_emails_before_insert();
+drop trigger if exists club_access_protect_admins on public.club_access;
+create trigger club_access_protect_admins
+  before update or delete on public.club_access
+  for each row execute function public.club_access_protect_admins();
 
-drop trigger if exists allowed_emails_protect_admins on public.allowed_emails;
-create trigger allowed_emails_protect_admins
-  before update or delete on public.allowed_emails
-  for each row execute function public.allowed_emails_protect_admins();
-
-drop trigger if exists allowed_emails_after_delete on public.allowed_emails;
-create trigger allowed_emails_after_delete
-  after delete on public.allowed_emails
-  for each row execute function public.allowed_emails_after_delete();
-
--- ---------------------------------------------------------------------------
--- Row-level security policies
--- ---------------------------------------------------------------------------
-
-drop policy if exists "admins read allowlist"   on public.allowed_emails;
-drop policy if exists "admins add to allowlist" on public.allowed_emails;
-drop policy if exists "admins remove from allowlist" on public.allowed_emails;
-
-create policy "admins read allowlist" on public.allowed_emails
-  for select to authenticated
-  using ((select public.is_admin()));
-
-create policy "admins add to allowlist" on public.allowed_emails
-  for insert to authenticated
-  with check ((select public.is_admin()));
-
-create policy "admins remove from allowlist" on public.allowed_emails
-  for delete to authenticated
-  using ((select public.is_admin()));
-
-drop policy if exists "members read members"        on public.members;
-drop policy if exists "members update own name"     on public.members;
-drop policy if exists "admins update any member"    on public.members;
-
-create policy "members read members" on public.members
-  for select to authenticated
-  using ((select public.is_member()));
-
-create policy "members update own name" on public.members
-  for update to authenticated
-  using ((select public.is_member()) and id = (select auth.uid()))
-  with check ((select public.is_member()) and id = (select auth.uid()));
-
-create policy "admins update any member" on public.members
-  for update to authenticated
-  using ((select public.is_admin()))
-  with check ((select public.is_admin()));
-
--- ---------------------------------------------------------------------------
--- Privileges. New tables are not exposed automatically in this project, so grant explicitly.
--- Row-level security above still decides which rows each person sees.
--- ---------------------------------------------------------------------------
-
-revoke all on table public.allowed_emails from public, anon, authenticated;
-revoke all on table public.members        from public, anon, authenticated;
-
-grant usage on schema public to authenticated;
-
-grant select, delete            on table public.allowed_emails to authenticated;
-grant insert (email, role)      on table public.allowed_emails to authenticated;
-grant select                    on table public.members        to authenticated;
-grant update (display_name)     on table public.members        to authenticated;
--- members rows are created only by claim_membership(), and removed by the cascade or allowlist trigger.
-
-revoke execute on function public.current_confirmed_email()       from public, anon, authenticated;
-revoke execute on function public.is_member()                     from public, anon;
-revoke execute on function public.is_admin()                      from public, anon;
-revoke execute on function public.my_access()                     from public, anon;
-revoke execute on function public.claim_membership()              from public, anon;
-revoke execute on function public.allowed_emails_before_insert()  from public, anon, authenticated;
-revoke execute on function public.allowed_emails_protect_admins() from public, anon, authenticated;
-revoke execute on function public.allowed_emails_after_delete()   from public, anon, authenticated;
-
-grant execute on function public.is_member()        to authenticated;
-grant execute on function public.is_admin()         to authenticated;
-grant execute on function public.my_access()        to authenticated;
-grant execute on function public.claim_membership() to authenticated;
-
--- ---------------------------------------------------------------------------
--- Seed the first two admins (left alone if already present)
--- ---------------------------------------------------------------------------
-
-insert into public.allowed_emails (email, role, added_by)
-values
-  ('office@thenines.club', 'admin', 'schema.sql'),
-  ('jbsolanet@gmail.com',  'admin', 'schema.sql')
-on conflict (email) do nothing;
-
--- ===========================================================================
--- STEP 2: member directory, profiles and headshots
--- ===========================================================================
---
--- To upgrade a project that already has step 1: run this file once in the Supabase SQL Editor.
--- It never deletes allowlist entries or members you added, and it is safe to run again.
--- (supabase/schema.sql = step 1 followed by this same section, for brand-new projects.)
---
--- Concepts:
---   allowed_emails = who may get in (access).            Unchanged from step 1.
---   members        = one row per login (sign-in record). Unchanged from step 1, except that
---                    removing someone's access no longer deletes their row.
---   profiles       = the directory card. One per email (unique, lowercase). An admin can create it
---                    before the person ever signs in. member_id stays empty until that person first
---                    signs in with a CONFIRMED matching email (any login method), then links to them.
---
--- Rules:
---   * Access always comes from allowed_emails. Removing an email blocks access at once but never
---     deletes the profile; deleting a profile is a separate admin action.
---   * Whether a card appears in the directory depends only on profiles.listed, which only admins
---     change. A card whose email is no longer on the list is marked "former member".
---   * allowed_emails.needs_profile = false (for example office@thenines.club) means no card is ever
---     created automatically for that email: an office or staff account with access but no card.
---   * profiles.foreign_member (admins only) marks people who moved abroad: still members, still see the
---     directory, shown with a "Foreign member" label, and to be left out of club emails when the site
---     starts sending them.
---   * Members read and edit only their own profile; admins manage all. Email and phone appear in the
---     directory only where that person turned show_email / show_phone on (both off by default).
-
--- Safety check: stop if an earlier draft of this step (with a different profiles table) was run.
-do $$
-begin
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'profiles')
-     and not exists (select 1 from information_schema.columns
-                     where table_schema = 'public' and table_name = 'profiles' and column_name = 'email') then
-    raise exception 'An earlier draft of the step 2 SQL was run on this project. Nothing was changed. Ask for the clean-up script before running this file.';
-  end if;
-end;
-$$;
-
--- ---------------------------------------------------------------------------
--- allowed_emails: needs_profile (false = office/staff account, never gets a card automatically)
--- ---------------------------------------------------------------------------
-
-do $$
-begin
-  if not exists (select 1 from information_schema.columns
-                 where table_schema = 'public' and table_name = 'allowed_emails' and column_name = 'needs_profile') then
-    alter table public.allowed_emails add column needs_profile boolean not null default true;
-    -- set once, when the column is first added; admins can change it later on the admin page
-    update public.allowed_emails set needs_profile = false where email = 'office@thenines.club';
-  end if;
-end;
-$$;
-
--- Admins may change needs_profile (and only that column) on the admin page.
-drop policy if exists "admins update allowlist settings" on public.allowed_emails;
-create policy "admins update allowlist settings" on public.allowed_emails
-  for update to authenticated
-  using ((select public.is_admin()))
-  with check ((select public.is_admin()));
-grant update (needs_profile) on table public.allowed_emails to authenticated;
-
--- ---------------------------------------------------------------------------
--- members: keep the sign-in record when access is removed; members see only their own row
--- ---------------------------------------------------------------------------
-
-drop trigger if exists allowed_emails_after_delete on public.allowed_emails;
-drop function if exists public.allowed_emails_after_delete();
-
-drop policy if exists "members read members"                  on public.members;  -- step 1
-drop policy if exists "members read own row, admins read all" on public.members;
-
-create policy "members read own row, admins read all" on public.members
-  for select to authenticated
-  using (
-    ((select public.is_member()) and id = (select auth.uid()))
-    or (select public.is_admin())
-  );
-
--- ---------------------------------------------------------------------------
--- profiles: the directory card
--- ---------------------------------------------------------------------------
-
-create table if not exists public.profiles (
-  id                 uuid primary key default gen_random_uuid(),
-  email              text not null,
-  member_id          uuid references public.members (id) on delete set null,
-  display_name       text not null,
-  bio                text,
-  phone              text,
-  show_email         boolean not null default false,
-  show_phone         boolean not null default false,
-  photo_path         text,
-  listed             boolean not null default true,
-  foreign_member     boolean not null default false,
-  created_on         timestamptz not null default now(),
-  updated_on         timestamptz not null default now(),
-  member_updated_on  timestamptz,  -- last time the person saved their own profile (null = prompt them)
-  constraint profiles_email_key          unique (email),
-  constraint profiles_member_id_key      unique (member_id),
-  constraint profiles_email_lower        check (email = lower(btrim(email))),
-  constraint profiles_email_shape        check (email ~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'),
-  constraint profiles_display_name_shape check (btrim(display_name) <> '' and char_length(display_name) <= 80),
-  constraint profiles_bio_length         check (bio is null or char_length(bio) <= 500),
-  constraint profiles_phone_shape        check (phone is null or phone ~ '^[0-9+() .-]{5,30}$'),
-  -- a photo can only live in the profile's own folder
-  constraint profiles_photo_path         check (photo_path is null or photo_path = id::text || '/avatar.jpg')
-);
-
-alter table public.profiles enable row level security;
-
--- The signed-in person's profile id, or null. Only for people who currently have access.
-create or replace function public.current_profile_id()
-returns uuid
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select p.id
-  from public.profiles p
-  where p.member_id = auth.uid()
-    and public.is_member();
-$$;
-
--- Tidies values. For edits made directly from the site by non-admins (current_user is
--- 'authenticated'), keeps email, member_id and listed as they were. The database's own functions
--- (sign-in linking, admin actions) and the SQL editor are not limited by this.
--- Records when a person saves their own, already linked profile.
--- Runs with the caller's rights (not security definer) so current_user tells these cases apart.
+-- Shared profile: tidies values. Direct edits from the site by someone who cannot manage the
+-- profile keep email and member_id as they were. Runs with the caller's rights so current_user
+-- tells the site ('authenticated') apart from the database's own functions and the SQL editor.
 create or replace function public.profiles_before_write()
 returns trigger
 language plpgsql
@@ -438,25 +350,14 @@ as $$
 begin
   new.email := lower(btrim(new.email));
   new.display_name := btrim(new.display_name);
-  new.bio := nullif(btrim(new.bio), '');
   new.phone := nullif(btrim(new.phone), '');
   new.updated_on := now();
   if tg_op = 'INSERT' then
     new.created_on := now();
-    new.member_updated_on := null;
-  else
-    if current_user = 'authenticated' and not public.is_admin() then
-      new.email := old.email;
-      new.member_id := old.member_id;
-      new.listed := old.listed;
-      new.foreign_member := old.foreign_member;
-      new.created_on := old.created_on;
-    end if;
-    if auth.uid() is not null and old.member_id = auth.uid() then
-      new.member_updated_on := now();
-    else
-      new.member_updated_on := old.member_updated_on;
-    end if;
+  elsif current_user = 'authenticated' and not public.can_admin_profile(old.id) then
+    new.email := old.email;
+    new.member_id := old.member_id;
+    new.created_on := old.created_on;
   end if;
   return new;
 end;
@@ -467,46 +368,54 @@ create trigger profiles_before_write
   before insert or update on public.profiles
   for each row execute function public.profiles_before_write();
 
-drop policy if exists "members read own profile, admins read all"     on public.profiles;
-drop policy if exists "admins add profiles"                           on public.profiles;
-drop policy if exists "members update own profile, admins update any" on public.profiles;
-drop policy if exists "admins delete profiles"                        on public.profiles;
+-- Club card settings: only that club's admins change listed / foreign_member (members' attempts
+-- are kept as they were). Records when the person saves their own card in that club.
+create or replace function public.club_profiles_before_write()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.bio := nullif(btrim(new.bio), '');
+  new.updated_on := now();
+  if tg_op = 'INSERT' then
+    new.created_on := now();
+    new.member_updated_on := null;
+    return new;
+  end if;
+  if current_user = 'authenticated' and not public.is_admin(old.club_id) then
+    new.listed := old.listed;
+    new.foreign_member := old.foreign_member;
+  end if;
+  new.club_id := old.club_id;
+  new.profile_id := old.profile_id;
+  new.created_on := old.created_on;
+  if auth.uid() is not null
+     and (select p.member_id from public.profiles p where p.id = old.profile_id) = auth.uid() then
+    new.member_updated_on := now();
+  else
+    new.member_updated_on := old.member_updated_on;
+  end if;
+  return new;
+end;
+$$;
 
-create policy "members read own profile, admins read all" on public.profiles
-  for select to authenticated
-  using (id = (select public.current_profile_id()) or (select public.is_admin()));
-
-create policy "admins add profiles" on public.profiles
-  for insert to authenticated
-  with check ((select public.is_admin()));
-
-create policy "members update own profile, admins update any" on public.profiles
-  for update to authenticated
-  using (id = (select public.current_profile_id()) or (select public.is_admin()))
-  with check (id = (select public.current_profile_id()) or (select public.is_admin()));
-
-create policy "admins delete profiles" on public.profiles
-  for delete to authenticated
-  using ((select public.is_admin()));
-
-revoke all on table public.profiles from public, anon, authenticated;
-grant select, delete on table public.profiles to authenticated;
-grant insert (email, display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member)
-  on table public.profiles to authenticated;
-grant update (display_name, bio, phone, show_email, show_phone, photo_path, listed, foreign_member)
-  on table public.profiles to authenticated;
+drop trigger if exists club_profiles_before_write on public.club_profiles;
+create trigger club_profiles_before_write
+  before insert or update on public.club_profiles
+  for each row execute function public.club_profiles_before_write();
 
 -- ---------------------------------------------------------------------------
--- Sign-in: link or create the caller's profile (called by the site after every sign-in)
+-- Sign-in
 -- ---------------------------------------------------------------------------
 
--- For an allowed, confirmed caller:
---   1. creates or refreshes their members row (as in step 1);
---   2. if no profile is linked to them yet, links the profile with their email (whatever login
---      method they used: Google and password sign-ins with the same email land on the same profile);
---   3. if there is no profile for their email at all, creates a blank one, unless their email is
---      marked needs_profile = false (office/staff accounts).
--- Does nothing for people not on the list.
+-- Called by the site after every sign-in. For a caller with access to any club it:
+--   1. creates or refreshes their members row (login record);
+--   2. links the shared profile with their email, if none is linked to them yet (any login method);
+--   3. if a club they belong to needs a card (needs_profile), makes sure a profile exists and that
+--      it has a card in each such club (blank cards for new people).
+-- Does nothing for people with no access.
 create or replace function public.claim_membership()
 returns void
 language plpgsql
@@ -518,8 +427,9 @@ declare
   u auth.users%rowtype;
   my_email text;
   default_name text;
+  pid uuid;
 begin
-  if not public.is_member() then
+  if not public.has_any_access() then
     return;
   end if;
 
@@ -538,348 +448,40 @@ begin
         last_login = excluded.last_login,
         display_name = coalesce(public.members.display_name, excluded.display_name);
 
-  if exists (select 1 from public.profiles where member_id = u.id) then
+  select id into pid from public.profiles where member_id = u.id;
+  if pid is null then
+    update public.profiles set member_id = u.id
+      where email = my_email and member_id is null
+      returning id into pid;
+  end if;
+
+  if not exists (select 1 from public.club_access where email = my_email and needs_profile) then
     return;
   end if;
 
-  update public.profiles set member_id = u.id
-    where email = my_email and member_id is null;
-  if found then
+  if pid is null then
+    insert into public.profiles (email, member_id, display_name)
+    values (my_email, u.id, default_name)
+    on conflict (email) do nothing   -- a profile for this email is linked to another login: leave it
+    returning id into pid;
+  end if;
+  if pid is null then
     return;
   end if;
 
-  if not (select a.needs_profile from public.allowed_emails a where a.email = my_email) then
-    return;
-  end if;
-
-  insert into public.profiles (email, member_id, display_name)
-  values (my_email, u.id, default_name)
-  on conflict (email) do nothing;  -- a profile for this email is linked to another login: leave it
-end;
-$$;
-
--- ---------------------------------------------------------------------------
--- Admin actions that must happen together
--- ---------------------------------------------------------------------------
-
--- Add a member: puts the email on the list AND creates their profile, in one step.
--- If the email is already on the list, its role is left as it is (needs_profile is set as asked).
--- If a profile already exists for the email (for example someone whose access was removed), it is
--- kept as it is, apart from "listed", which is set as asked. Returns the profile id.
--- With p_needs_profile = false (office/staff account): access only, no card; returns the existing
--- card's id if there is one, otherwise null.
-drop function if exists public.admin_add_member(text, text, text, boolean, boolean);
-create or replace function public.admin_add_member(
-  p_email text,
-  p_display_name text,
-  p_role text default 'member',
-  p_listed boolean default true,
-  p_foreign boolean default false,
-  p_needs_profile boolean default true
-)
-returns uuid
-language plpgsql
-volatile
-security definer
-set search_path = ''
-as $$
-declare
-  e text := lower(btrim(p_email));
-  pid uuid;
-begin
-  if not public.is_admin() then
-    raise exception 'Only admins can add members.' using errcode = '42501';
-  end if;
-  if p_role not in ('member', 'admin') then
-    raise exception 'Role must be member or admin.' using errcode = '22023';
-  end if;
-
-  insert into public.allowed_emails (email, role, needs_profile) values (e, p_role, coalesce(p_needs_profile, true))
-  on conflict (email) do update set needs_profile = excluded.needs_profile;
-
-  select id into pid from public.profiles where email = e;
-  if not coalesce(p_needs_profile, true) then
-    return pid;
-  end if;
-  if pid is not null then
-    update public.profiles set listed = coalesce(p_listed, true) where id = pid;
-    return pid;
-  end if;
-
-  insert into public.profiles (email, display_name, listed, foreign_member, member_id)
-  values (e, p_display_name, coalesce(p_listed, true), coalesce(p_foreign, false),
-          (select m.id from public.members m
-            where lower(m.email) = e
-              and not exists (select 1 from public.profiles x where x.member_id = m.id)))
-  returning id into pid;
-
-  return pid;
-end;
-$$;
-
--- Remove access: takes the email off the list (the step 1 rules still apply: not yourself, never
--- the last admin) and, if asked, hides their card. Never deletes the profile.
-create or replace function public.admin_remove_access(p_email text, p_hide boolean default true)
-returns void
-language plpgsql
-volatile
-security definer
-set search_path = ''
-as $$
-declare
-  e text := lower(btrim(p_email));
-begin
-  if not public.is_admin() then
-    raise exception 'Only admins can remove access.' using errcode = '42501';
-  end if;
-  delete from public.allowed_emails where email = e;
-  if not found then
-    raise exception 'That email is not on the list.' using errcode = 'P0002';
-  end if;
-  if p_hide then
-    update public.profiles set listed = false where email = e;
-  end if;
-end;
-$$;
-
--- ---------------------------------------------------------------------------
--- The directory: listed cards only; email and phone ONLY where the person turned them on.
--- former_member = their email is no longer on the list; foreign_member = moved abroad.
--- Returns nothing to non-members.
--- ---------------------------------------------------------------------------
-
-drop function if exists public.directory();
-create function public.directory()
-returns table (
-  profile_id    uuid,
-  display_name  text,
-  bio           text,
-  photo_path    text,
-  email         text,
-  phone          text,
-  former_member  boolean,
-  foreign_member boolean
-)
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select
-    p.id,
-    p.display_name,
-    p.bio,
-    p.photo_path,
-    case when p.show_email then p.email end,
-    case when p.show_phone then p.phone end,
-    a.email is null,
-    p.foreign_member
-  from public.profiles p
-  left join public.allowed_emails a on a.email = p.email
-  where public.is_member()
-    and p.listed
-  order by lower(p.display_name);
-$$;
-
-revoke execute on function public.directory()                               from public, anon;
-revoke execute on function public.current_profile_id()                      from public, anon;
-revoke execute on function public.claim_membership()                        from public, anon;
-revoke execute on function public.admin_add_member(text, text, text, boolean, boolean, boolean) from public, anon;
-revoke execute on function public.admin_remove_access(text, boolean)        from public, anon;
-revoke execute on function public.profiles_before_write()                   from public, anon, authenticated;
-grant  execute on function public.directory()                               to authenticated;
-grant  execute on function public.current_profile_id()                      to authenticated;
-grant  execute on function public.claim_membership()                        to authenticated;
-grant  execute on function public.admin_add_member(text, text, text, boolean, boolean, boolean) to authenticated;
-grant  execute on function public.admin_remove_access(text, boolean)        to authenticated;
-
--- ---------------------------------------------------------------------------
--- Existing members (signed in under step 1) get a profile with their current name,
--- except office/staff accounts (needs_profile = false).
--- ---------------------------------------------------------------------------
-
-insert into public.profiles (email, member_id, display_name)
-select lower(m.email), m.id, coalesce(nullif(btrim(m.display_name), ''), split_part(lower(m.email), '@', 1))
-from public.members m
-join public.allowed_emails a on a.email = lower(m.email) and a.needs_profile
-where not exists (select 1 from public.profiles p where p.member_id = m.id or p.email = lower(m.email))
-on conflict do nothing;
-
--- ---------------------------------------------------------------------------
--- Headshots: a PRIVATE storage bucket. Files live at <profile id>/avatar.jpg.
--- The site shows them through signed links that expire after an hour.
--- ---------------------------------------------------------------------------
-
-insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('headshots', 'headshots', false, 1048576, array['image/jpeg'])
-on conflict (id) do update
-  set public = false,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
-
-drop policy if exists "headshots: members view"            on storage.objects;
-drop policy if exists "headshots: upload own, admins any"  on storage.objects;
-drop policy if exists "headshots: replace own, admins any" on storage.objects;
-drop policy if exists "headshots: delete own, admins any"  on storage.objects;
-
-create policy "headshots: members view" on storage.objects
-  for select to authenticated
-  using (bucket_id = 'headshots' and (select public.is_member()));
-
-create policy "headshots: upload own, admins any" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'headshots'
-    and (
-      name = (select public.current_profile_id())::text || '/avatar.jpg'
-      or ((select public.is_admin()) and name ~ '^[0-9a-f-]{36}/avatar\.jpg$')
-    )
-  );
-
-create policy "headshots: replace own, admins any" on storage.objects
-  for update to authenticated
-  using (
-    bucket_id = 'headshots'
-    and (name = (select public.current_profile_id())::text || '/avatar.jpg' or (select public.is_admin()))
-  )
-  with check (
-    bucket_id = 'headshots'
-    and (
-      name = (select public.current_profile_id())::text || '/avatar.jpg'
-      or ((select public.is_admin()) and name ~ '^[0-9a-f-]{36}/avatar\.jpg$')
-    )
-  );
-
-create policy "headshots: delete own, admins any" on storage.objects
-  for delete to authenticated
-  using (
-    bucket_id = 'headshots'
-    and (name = (select public.current_profile_id())::text || '/avatar.jpg' or (select public.is_admin()))
-  );
-
--- Make the site's API see the changes straight away.
-notify pgrst, 'reload schema';
-
--- ===========================================================================
--- STEP 3: brigadier groups
--- ===========================================================================
---
--- To upgrade a project that already has steps 1 and 2: run this file once in the Supabase SQL Editor.
--- It only adds things, and it is safe to run again.
--- (supabase/schema.sql = steps 1, 2 and 3 in order, for brand-new projects.)
---
--- A brigadier group is the standing team that organises a monthly dinner: usually two members,
--- rarely three. Its members are each other's co-brigadiers. A person's co-brigadiers are everyone
--- who shares a group with them: this is always worked out from group membership, never stored twice.
--- A person normally belongs to one group; more than one is allowed.
---
--- Members of a group are directory cards (profiles), so a group can be set up before people sign in.
---
--- Next step (not built yet): a dinners table with a brigadier_group_id integer column referencing
--- brigadier_groups(id), so a dinner's brigadiers come from its group instead of free text.
-
-create table if not exists public.brigadier_groups (
-  id          integer generated always as identity primary key,
-  created_on  timestamptz not null default now()
-);
-
-create table if not exists public.brigadier_group_members (
-  group_id    integer not null references public.brigadier_groups (id) on delete cascade,
-  profile_id  uuid    not null references public.profiles (id) on delete cascade,
-  added_on    timestamptz not null default now(),
-  primary key (group_id, profile_id)
-);
-
-create index if not exists brigadier_group_members_profile_idx on public.brigadier_group_members (profile_id);
-
-alter table public.brigadier_groups        enable row level security;
-alter table public.brigadier_group_members enable row level security;
-
--- Admins read the tables directly. Members see co-brigadiers through directory() and
--- my_co_brigadiers() below, which only reveal names on listed cards.
-drop policy if exists "admins read brigadier groups"         on public.brigadier_groups;
-drop policy if exists "admins read brigadier group members"  on public.brigadier_group_members;
-
-create policy "admins read brigadier groups" on public.brigadier_groups
-  for select to authenticated
-  using ((select public.is_admin()));
-
-create policy "admins read brigadier group members" on public.brigadier_group_members
-  for select to authenticated
-  using ((select public.is_admin()));
-
-revoke all on table public.brigadier_groups        from public, anon, authenticated;
-revoke all on table public.brigadier_group_members from public, anon, authenticated;
-grant select on table public.brigadier_groups        to authenticated;
-grant select on table public.brigadier_group_members to authenticated;
--- Changes go through the admin functions below, so a group is always saved in one step.
-
--- ---------------------------------------------------------------------------
--- Admin actions
--- ---------------------------------------------------------------------------
-
--- Creates a group (p_group_id null) or replaces the members of an existing one.
--- p_profile_ids: the cards in the group, at least one. Returns the group id.
-create or replace function public.admin_save_brigadier_group(p_group_id integer, p_profile_ids uuid[])
-returns integer
-language plpgsql
-volatile
-security definer
-set search_path = ''
-as $$
-declare
-  gid integer := p_group_id;
-  ids uuid[] := array(select distinct x from unnest(coalesce(p_profile_ids, '{}'::uuid[])) as x where x is not null);
-begin
-  if not public.is_admin() then
-    raise exception 'Only admins can change brigadier groups.' using errcode = '42501';
-  end if;
-  if cardinality(ids) = 0 then
-    raise exception 'A brigadier group needs at least one member.' using errcode = '22023';
-  end if;
-  if (select count(*) from public.profiles where id = any (ids)) <> cardinality(ids) then
-    raise exception 'One of the chosen members no longer exists. Reload and try again.' using errcode = '23503';
-  end if;
-
-  if gid is null then
-    insert into public.brigadier_groups default values returning id into gid;
-  elsif not exists (select 1 from public.brigadier_groups where id = gid) then
-    raise exception 'That brigadier group no longer exists.' using errcode = 'P0002';
-  end if;
-
-  delete from public.brigadier_group_members where group_id = gid and not (profile_id = any (ids));
-  insert into public.brigadier_group_members (group_id, profile_id)
-  select gid, x from unnest(ids) as x
+  insert into public.club_profiles (club_id, profile_id)
+  select a.club_id, pid from public.club_access a
+  where a.email = my_email and a.needs_profile
   on conflict do nothing;
-
-  return gid;
-end;
-$$;
-
-create or replace function public.admin_delete_brigadier_group(p_group_id integer)
-returns void
-language plpgsql
-volatile
-security definer
-set search_path = ''
-as $$
-begin
-  if not public.is_admin() then
-    raise exception 'Only admins can change brigadier groups.' using errcode = '42501';
-  end if;
-  delete from public.brigadier_groups where id = p_group_id;
-  if not found then
-    raise exception 'That brigadier group no longer exists.' using errcode = 'P0002';
-  end if;
 end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Co-brigadiers, worked out from shared groups
+-- Directory and co-brigadiers (per club)
 -- ---------------------------------------------------------------------------
 
--- Names of a card's co-brigadiers that members may see (listed cards only), in name order.
-create or replace function public.co_brigadier_names(p_profile_id uuid)
+-- Names of a card's co-brigadiers in one club (listed cards in that club only), in name order.
+create or replace function public.co_brigadier_names(p_club integer, p_profile_id uuid)
 returns text[]
 language sql
 stable
@@ -887,29 +489,31 @@ security definer
 set search_path = ''
 as $$
   select coalesce(array_agg(distinct other.display_name order by other.display_name), '{}')
-  from public.brigadier_group_members mine
+  from public.brigadier_groups g
+  join public.brigadier_group_members mine on mine.group_id = g.id and mine.profile_id = p_profile_id
   join public.brigadier_group_members theirs
-    on theirs.group_id = mine.group_id and theirs.profile_id <> mine.profile_id
+    on theirs.group_id = g.id and theirs.profile_id <> p_profile_id
   join public.profiles other on other.id = theirs.profile_id
-  where mine.profile_id = p_profile_id
-    and other.listed;
+  join public.club_profiles ocp on ocp.profile_id = other.id and ocp.club_id = p_club
+  where g.club_id = p_club
+    and ocp.listed;
 $$;
 
--- The signed-in member's own co-brigadiers (for their profile page).
-create or replace function public.my_co_brigadiers()
+create or replace function public.my_co_brigadiers(p_club integer)
 returns text[]
 language sql
 stable
 security definer
 set search_path = ''
 as $$
-  select case when public.current_profile_id() is null then '{}'::text[]
-              else public.co_brigadier_names(public.current_profile_id()) end;
+  select case when public.current_profile_id() is null or not public.is_member(p_club) then '{}'::text[]
+              else public.co_brigadier_names(p_club, public.current_profile_id()) end;
 $$;
 
--- The directory, now with each card's co-brigadiers. Same privacy rules as step 2.
-drop function if exists public.directory();
-create function public.directory()
+-- A club's directory: listed cards only. Email and phone appear where the person chose to show
+-- them, and always for that club's admins. former_member = no access to this club any more.
+-- Returns nothing to people who are not members of the club.
+create or replace function public.directory(p_club integer)
 returns table (
   profile_id     uuid,
   display_name   text,
@@ -929,49 +533,211 @@ as $$
   select
     p.id,
     p.display_name,
-    p.bio,
+    cp.bio,
     p.photo_path,
-    case when p.show_email then p.email end,
-    case when p.show_phone then p.phone end,
-    a.email is null,
-    p.foreign_member,
-    public.co_brigadier_names(p.id)
-  from public.profiles p
-  left join public.allowed_emails a on a.email = p.email
-  where public.is_member()
-    and p.listed
+    case when cp.show_email or public.is_admin(p_club) then p.email end,
+    case when cp.show_phone or public.is_admin(p_club) then p.phone end,
+    not exists (select 1 from public.club_access a where a.club_id = p_club and a.email = p.email),
+    cp.foreign_member,
+    public.co_brigadier_names(p_club, p.id)
+  from public.club_profiles cp
+  join public.profiles p on p.id = cp.profile_id
+  where public.is_member(p_club)
+    and cp.club_id = p_club
+    and cp.listed
   order by lower(p.display_name);
 $$;
 
-revoke execute on function public.directory()                                    from public, anon;
-revoke execute on function public.my_co_brigadiers()                             from public, anon;
-revoke execute on function public.co_brigadier_names(uuid)                       from public, anon, authenticated;
-revoke execute on function public.admin_save_brigadier_group(integer, uuid[])    from public, anon;
-revoke execute on function public.admin_delete_brigadier_group(integer)          from public, anon;
-grant  execute on function public.directory()                                    to authenticated;
-grant  execute on function public.my_co_brigadiers()                             to authenticated;
-grant  execute on function public.admin_save_brigadier_group(integer, uuid[])    to authenticated;
-grant  execute on function public.admin_delete_brigadier_group(integer)          to authenticated;
+-- ---------------------------------------------------------------------------
+-- Admin actions (each checks that the caller is an admin of the club it acts on)
+-- ---------------------------------------------------------------------------
 
--- Make the site's API see the changes straight away.
-notify pgrst, 'reload schema';
+-- Add a member to a club: access AND their card in that club, in one step. The shared profile is
+-- reused if the person already has one (for example from another club). If the email already has
+-- access to this club, its role is left as it is (needs_profile is set as asked). Re-adding someone
+-- whose access was removed restores access and keeps their card ("listed" set as asked).
+-- p_needs_profile = false: access only, no card. Returns the profile id (or null without a card).
+create or replace function public.admin_add_member(
+  p_club integer,
+  p_email text,
+  p_display_name text,
+  p_role text default 'member',
+  p_listed boolean default true,
+  p_foreign boolean default false,
+  p_needs_profile boolean default true
+)
+returns uuid
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  e text := lower(btrim(p_email));
+  pid uuid;
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can add members.' using errcode = '42501';
+  end if;
+  if p_role not in ('member', 'admin') then
+    raise exception 'Role must be member or admin.' using errcode = '22023';
+  end if;
 
--- ===========================================================================
--- STEP 4: change a member's email
--- ===========================================================================
---
--- To upgrade a project that already has steps 1 to 3: run this file once in the Supabase SQL Editor.
--- It only adds one function, and it is safe to run again.
--- (supabase/schema.sql = steps 1 to 4 in order, for brand-new projects.)
---
--- When a member starts using a different email, an admin changes it in one action. It:
---   1. moves their access (allowed_emails) to the new email, keeping role and settings;
---   2. moves their directory card (profiles) to the new email, keeping photo, bio, groups and choices;
---   3. unlinks the card from their old login, unless that login already uses the new email.
---      The next time they sign in with the new email (any method), claim_membership() links the card
---      to them again. The old login stops working because its email is no longer on the list.
--- Nothing is duplicated or deleted.
+  insert into public.club_access (club_id, email, role, needs_profile)
+  values (p_club, e, p_role, coalesce(p_needs_profile, true))
+  on conflict (club_id, email) do update set needs_profile = excluded.needs_profile;
 
+  select id into pid from public.profiles where email = e;
+  if not coalesce(p_needs_profile, true) then
+    return pid;
+  end if;
+
+  if pid is null then
+    insert into public.profiles (email, display_name, member_id)
+    values (e, p_display_name,
+            (select m.id from public.members m
+              where lower(m.email) = e
+                and not exists (select 1 from public.profiles x where x.member_id = m.id)))
+    returning id into pid;
+  end if;
+
+  insert into public.club_profiles (club_id, profile_id, listed, foreign_member)
+  values (p_club, pid, coalesce(p_listed, true), coalesce(p_foreign, false))
+  on conflict (club_id, profile_id) do update set listed = excluded.listed;
+
+  return pid;
+end;
+$$;
+
+-- Remove access to one club: the person can no longer open that club's member area. Their card in
+-- that club is kept (hidden if asked; otherwise shown as "Former member"). Other clubs are untouched.
+create or replace function public.admin_remove_access(p_club integer, p_email text, p_hide boolean default true)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  e text := lower(btrim(p_email));
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can remove access.' using errcode = '42501';
+  end if;
+  delete from public.club_access where club_id = p_club and email = e;
+  if not found then
+    raise exception 'That email is not on this club''s list.' using errcode = 'P0002';
+  end if;
+  if p_hide then
+    update public.club_profiles cp set listed = false
+    from public.profiles p
+    where cp.profile_id = p.id and cp.club_id = p_club and p.email = e;
+  end if;
+end;
+$$;
+
+-- What "Remove from club" would do, so the page can ask before acting:
+--   small_group_ids = this club's brigadier groups that would be left with fewer than 2 members;
+--   deletes_profile = the person would then belong to no club, so their shared profile and login
+--                     record are deleted too; photo_path = their photo (removed by the page first).
+create or replace function public.admin_remove_from_club_preview(p_club integer, p_email text)
+returns table (small_group_ids integer[], deletes_profile boolean, photo_path text)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+declare
+  e text := lower(btrim(p_email));
+  pid uuid;
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can remove members.' using errcode = '42501';
+  end if;
+  select id into pid from public.profiles where email = e;
+  return query
+  select
+    coalesce((select array_agg(g.id order by g.id)
+              from public.brigadier_groups g
+              where g.club_id = p_club
+                and exists (select 1 from public.brigadier_group_members m where m.group_id = g.id and m.profile_id = pid)
+                and (select count(*) from public.brigadier_group_members m where m.group_id = g.id and m.profile_id <> pid) < 2),
+             '{}'::integer[]),
+    not exists (select 1 from public.club_access a where a.email = e and a.club_id <> p_club)
+      and not exists (select 1 from public.club_profiles cp where cp.profile_id = pid and cp.club_id <> p_club),
+    (select p.photo_path from public.profiles p where p.id = pid);
+end;
+$$;
+
+-- Remove from club: deletes, for THIS club only, the person's access, their card and their
+-- brigadier group places. A group left with fewer than 2 members is deleted only when
+-- p_delete_small_groups is true (the page asks the admin first); otherwise nothing changes.
+-- If the person then belongs to no club (no access and no card anywhere), their shared profile and
+-- their login record (members) are deleted too. Their Supabase sign-in account itself is not.
+create or replace function public.admin_remove_from_club(p_club integer, p_email text, p_delete_small_groups boolean default false)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  e text := lower(btrim(p_email));
+  pid uuid;
+  small integer[];
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can remove members.' using errcode = '42501';
+  end if;
+  if e = public.current_confirmed_email() then
+    raise exception 'You cannot remove yourself. Ask another admin.' using errcode = '42501';
+  end if;
+  select id into pid from public.profiles where email = e;
+  if pid is null and not exists (select 1 from public.club_access where club_id = p_club and email = e) then
+    raise exception 'That person is not in this club.' using errcode = 'P0002';
+  end if;
+  if pid is not null and not exists (select 1 from public.club_profiles where club_id = p_club and profile_id = pid)
+     and not exists (select 1 from public.club_access where club_id = p_club and email = e) then
+    raise exception 'That person is not in this club.' using errcode = 'P0002';
+  end if;
+
+  select array_agg(g.id) into small
+  from public.brigadier_groups g
+  where g.club_id = p_club
+    and exists (select 1 from public.brigadier_group_members m where m.group_id = g.id and m.profile_id = pid)
+    and (select count(*) from public.brigadier_group_members m where m.group_id = g.id and m.profile_id <> pid) < 2;
+  if small is not null and not coalesce(p_delete_small_groups, false) then
+    raise exception 'Removing this person would leave brigadier group(s) % with fewer than two members. Confirm to delete those groups.', array_to_string(small, ', ')
+      using errcode = 'P0001', hint = 'nines_small_groups';
+  end if;
+
+  -- this club only (the step 1 rules apply: not yourself, never the club's last admin)
+  delete from public.club_access where club_id = p_club and email = e;
+  if pid is not null then
+    delete from public.brigadier_group_members m
+      using public.brigadier_groups g
+      where m.group_id = g.id and g.club_id = p_club and m.profile_id = pid;
+    if small is not null then
+      delete from public.brigadier_groups where id = any (small) and club_id = p_club;
+    end if;
+    delete from public.club_profiles where club_id = p_club and profile_id = pid;
+  end if;
+
+  -- belongs to no club any more: delete the shared profile and the login record
+  if not exists (select 1 from public.club_access where email = e)
+     and (pid is null or not exists (select 1 from public.club_profiles where profile_id = pid)) then
+    if pid is not null then
+      delete from public.profiles where id = pid;
+    end if;
+    delete from public.members where lower(email) = e;
+  end if;
+end;
+$$;
+
+-- Change a person's email everywhere (their access in every club and their profile), keeping
+-- everything else. The caller must be a super admin, or an admin of every club the person is in.
+-- The card is unlinked from the old login unless that login already uses the new email; the next
+-- sign-in with the new email links it again.
 create or replace function public.admin_change_email(p_old_email text, p_new_email text)
 returns void
 language plpgsql
@@ -982,10 +748,8 @@ as $$
 declare
   o text := lower(btrim(p_old_email));
   n text := lower(btrim(p_new_email));
+  pid uuid;
 begin
-  if not public.is_admin() then
-    raise exception 'Only admins can change emails.' using errcode = '42501';
-  end if;
   if n is null or n !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
     raise exception 'The new email address does not look right.' using errcode = '22023';
   end if;
@@ -995,31 +759,285 @@ begin
   if o = public.current_confirmed_email() then
     raise exception 'You cannot change your own email here. Ask another admin.' using errcode = '42501';
   end if;
-  if not exists (select 1 from public.allowed_emails where email = o)
-     and not exists (select 1 from public.profiles where email = o) then
-    raise exception 'That email is not on the list and has no card.' using errcode = 'P0002';
+  select id into pid from public.profiles where email = o;
+  if pid is null and not exists (select 1 from public.club_access where email = o) then
+    raise exception 'That email is not on any list and has no card.' using errcode = 'P0002';
   end if;
-  if exists (select 1 from public.allowed_emails where email = n)
+  if not public.is_super_admin() and (
+       exists (select 1 from public.club_access a where a.email = o and not public.is_admin(a.club_id))
+    or exists (select 1 from public.club_profiles cp where cp.profile_id = pid and not public.is_admin(cp.club_id))
+    or not (exists (select 1 from public.club_access a where a.email = o)
+            or exists (select 1 from public.club_profiles cp where cp.profile_id = pid))
+  ) then
+    raise exception 'This person is also in a club you do not manage. Ask a super admin.' using errcode = '42501';
+  end if;
+  if exists (select 1 from public.club_access where email = n)
      or exists (select 1 from public.profiles where email = n) then
     raise exception 'The new email is already used by someone else.' using errcode = '23505';
   end if;
 
-  -- The step 1 rules still apply here (for example, never leave the club without an admin).
-  update public.allowed_emails set email = n where email = o;
-
+  update public.club_access set email = n where email = o;
   update public.profiles p
     set email = n,
         member_id = case
           when p.member_id is not null
                and (select lower(u.email) from auth.users u where u.id = p.member_id) = n
-            then p.member_id   -- their login already uses the new email: keep the link
-          else null            -- re-linked automatically when they sign in with the new email
+            then p.member_id
+          else null
         end
-    where p.email = o;
+    where p.id = pid;
 end;
 $$;
 
-revoke execute on function public.admin_change_email(text, text) from public, anon;
-grant  execute on function public.admin_change_email(text, text) to authenticated;
+-- Creates a brigadier group in a club (p_group_id null) or replaces the members of one.
+-- Every member must have a card in that club. Returns the group id.
+create or replace function public.admin_save_brigadier_group(p_club integer, p_group_id integer, p_profile_ids uuid[])
+returns integer
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  gid integer := p_group_id;
+  ids uuid[] := array(select distinct x from unnest(coalesce(p_profile_ids, '{}'::uuid[])) as x where x is not null);
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can change brigadier groups.' using errcode = '42501';
+  end if;
+  if cardinality(ids) = 0 then
+    raise exception 'A brigadier group needs at least one member.' using errcode = '22023';
+  end if;
+  if (select count(*) from public.club_profiles where club_id = p_club and profile_id = any (ids)) <> cardinality(ids) then
+    raise exception 'Everyone in a brigadier group must have a card in this club. Reload and try again.' using errcode = '23503';
+  end if;
 
+  if gid is null then
+    insert into public.brigadier_groups (club_id) values (p_club) returning id into gid;
+  elsif not exists (select 1 from public.brigadier_groups where id = gid and club_id = p_club) then
+    raise exception 'That brigadier group no longer exists.' using errcode = 'P0002';
+  end if;
+
+  delete from public.brigadier_group_members where group_id = gid and not (profile_id = any (ids));
+  insert into public.brigadier_group_members (group_id, profile_id)
+  select gid, x from unnest(ids) as x
+  on conflict do nothing;
+
+  return gid;
+end;
+$$;
+
+create or replace function public.admin_delete_brigadier_group(p_club integer, p_group_id integer)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  if not public.is_admin(p_club) then
+    raise exception 'Only admins of this club can change brigadier groups.' using errcode = '42501';
+  end if;
+  delete from public.brigadier_groups where id = p_group_id and club_id = p_club;
+  if not found then
+    raise exception 'That brigadier group no longer exists.' using errcode = 'P0002';
+  end if;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Row-level security
+-- ---------------------------------------------------------------------------
+
+alter table public.clubs                   enable row level security;
+alter table public.club_access             enable row level security;
+alter table public.super_admins            enable row level security;
+alter table public.members                 enable row level security;
+alter table public.profiles                enable row level security;
+alter table public.club_profiles           enable row level security;
+alter table public.brigadier_groups        enable row level security;
+alter table public.brigadier_group_members enable row level security;
+
+drop policy if exists "signed-in people read clubs" on public.clubs;
+create policy "signed-in people read clubs" on public.clubs
+  for select to authenticated using (true);
+
+drop policy if exists "club admins read their club's access list" on public.club_access;
+drop policy if exists "club admins change access settings"        on public.club_access;
+create policy "club admins read their club's access list" on public.club_access
+  for select to authenticated using ((select public.is_admin(club_id)));
+create policy "club admins change access settings" on public.club_access
+  for update to authenticated
+  using ((select public.is_admin(club_id)))
+  with check ((select public.is_admin(club_id)));
+
+drop policy if exists "super admins read super admins" on public.super_admins;
+create policy "super admins read super admins" on public.super_admins
+  for select to authenticated using ((select public.is_super_admin()));
+
+drop policy if exists "people read own login record, admins read their members" on public.members;
+create policy "people read own login record, admins read their members" on public.members
+  for select to authenticated
+  using (
+    id = (select auth.uid())
+    or (select public.is_super_admin())
+    or exists (select 1 from public.club_access a where a.email = lower(members.email) and public.is_admin(a.club_id))
+  );
+
+drop policy if exists "people read own profile, admins read their members'" on public.profiles;
+drop policy if exists "people update own profile, admins their members'"   on public.profiles;
+create policy "people read own profile, admins read their members'" on public.profiles
+  for select to authenticated
+  using (id = (select public.current_profile_id()) or public.can_admin_profile(id));
+create policy "people update own profile, admins their members'" on public.profiles
+  for update to authenticated
+  using (id = (select public.current_profile_id()) or public.can_admin_profile(id))
+  with check (id = (select public.current_profile_id()) or public.can_admin_profile(id));
+
+drop policy if exists "people read own club cards, club admins read all" on public.club_profiles;
+drop policy if exists "people update own club cards, club admins all"   on public.club_profiles;
+create policy "people read own club cards, club admins read all" on public.club_profiles
+  for select to authenticated
+  using ((profile_id = (select public.current_profile_id()) and public.is_member(club_id)) or public.is_admin(club_id));
+create policy "people update own club cards, club admins all" on public.club_profiles
+  for update to authenticated
+  using ((profile_id = (select public.current_profile_id()) and public.is_member(club_id)) or public.is_admin(club_id))
+  with check ((profile_id = (select public.current_profile_id()) and public.is_member(club_id)) or public.is_admin(club_id));
+
+drop policy if exists "club admins read brigadier groups"        on public.brigadier_groups;
+drop policy if exists "club admins read brigadier group members" on public.brigadier_group_members;
+create policy "club admins read brigadier groups" on public.brigadier_groups
+  for select to authenticated using (public.is_admin(club_id));
+create policy "club admins read brigadier group members" on public.brigadier_group_members
+  for select to authenticated
+  using (exists (select 1 from public.brigadier_groups g where g.id = group_id and public.is_admin(g.club_id)));
+
+-- ---------------------------------------------------------------------------
+-- Privileges (new tables are not exposed automatically). Nothing for anon.
+-- Writes other than those granted here go through the admin functions above.
+-- ---------------------------------------------------------------------------
+
+revoke all on table public.clubs, public.club_access, public.super_admins, public.members,
+                    public.profiles, public.club_profiles, public.brigadier_groups,
+                    public.brigadier_group_members
+  from public, anon, authenticated;
+
+grant usage on schema public to authenticated;
+grant select on table public.clubs, public.club_access, public.super_admins, public.members,
+                      public.profiles, public.club_profiles, public.brigadier_groups,
+                      public.brigadier_group_members
+  to authenticated;
+grant update (needs_profile)                                            on table public.club_access   to authenticated;
+grant update (display_name, phone, photo_path)                          on table public.profiles      to authenticated;
+grant update (bio, show_email, show_phone, listed, foreign_member)      on table public.club_profiles to authenticated;
+
+-- every function: nothing for public or anon
+revoke execute on function public.current_confirmed_email()                         from public, anon, authenticated;
+revoke execute on function public.co_brigadier_names(integer, uuid)                 from public, anon, authenticated;
+revoke execute on function public.club_access_before_insert()                       from public, anon, authenticated;
+revoke execute on function public.club_access_protect_admins()                      from public, anon, authenticated;
+revoke execute on function public.profiles_before_write()                           from public, anon, authenticated;
+revoke execute on function public.club_profiles_before_write()                      from public, anon, authenticated;
+revoke execute on function public.is_super_admin()                                  from public, anon;
+revoke execute on function public.my_access(integer)                                from public, anon;
+revoke execute on function public.is_member(integer)                                from public, anon;
+revoke execute on function public.is_admin(integer)                                 from public, anon;
+revoke execute on function public.has_any_access()                                  from public, anon;
+revoke execute on function public.my_clubs()                                        from public, anon;
+revoke execute on function public.current_profile_id()                              from public, anon;
+revoke execute on function public.can_admin_profile(uuid)                           from public, anon;
+revoke execute on function public.profile_id_from_path(text)                        from public, anon;
+revoke execute on function public.claim_membership()                                from public, anon;
+revoke execute on function public.my_co_brigadiers(integer)                         from public, anon;
+revoke execute on function public.directory(integer)                                from public, anon;
+revoke execute on function public.admin_add_member(integer, text, text, text, boolean, boolean, boolean) from public, anon;
+revoke execute on function public.admin_remove_access(integer, text, boolean)       from public, anon;
+revoke execute on function public.admin_remove_from_club_preview(integer, text)     from public, anon;
+revoke execute on function public.admin_remove_from_club(integer, text, boolean)    from public, anon;
+revoke execute on function public.admin_change_email(text, text)                    from public, anon;
+revoke execute on function public.admin_save_brigadier_group(integer, integer, uuid[]) from public, anon;
+revoke execute on function public.admin_delete_brigadier_group(integer, integer)    from public, anon;
+
+-- signed-in people (row-level security and the checks inside each function still decide)
+grant execute on function public.is_super_admin()                                  to authenticated;
+grant execute on function public.my_access(integer)                                to authenticated;
+grant execute on function public.is_member(integer)                                to authenticated;
+grant execute on function public.is_admin(integer)                                 to authenticated;
+grant execute on function public.has_any_access()                                  to authenticated;
+grant execute on function public.my_clubs()                                        to authenticated;
+grant execute on function public.current_profile_id()                              to authenticated;
+grant execute on function public.can_admin_profile(uuid)                           to authenticated;
+grant execute on function public.profile_id_from_path(text)                        to authenticated;
+grant execute on function public.claim_membership()                                to authenticated;
+grant execute on function public.my_co_brigadiers(integer)                         to authenticated;
+grant execute on function public.directory(integer)                                to authenticated;
+grant execute on function public.admin_add_member(integer, text, text, text, boolean, boolean, boolean) to authenticated;
+grant execute on function public.admin_remove_access(integer, text, boolean)       to authenticated;
+grant execute on function public.admin_remove_from_club_preview(integer, text)     to authenticated;
+grant execute on function public.admin_remove_from_club(integer, text, boolean)    to authenticated;
+grant execute on function public.admin_change_email(text, text)                    to authenticated;
+grant execute on function public.admin_save_brigadier_group(integer, integer, uuid[]) to authenticated;
+grant execute on function public.admin_delete_brigadier_group(integer, integer)    to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Headshots: a PRIVATE storage bucket, files at <profile id>/avatar.jpg (one photo per person,
+-- shared by all their clubs). Shown through signed links that expire after an hour.
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('headshots', 'headshots', false, 1048576, array['image/jpeg'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "headshots: members view"            on storage.objects;
+drop policy if exists "headshots: upload own, admins any"  on storage.objects;
+drop policy if exists "headshots: replace own, admins any" on storage.objects;
+drop policy if exists "headshots: delete own, admins any"  on storage.objects;
+drop policy if exists "headshots: club members view"                      on storage.objects;
+drop policy if exists "headshots: upload own, club admins their members'" on storage.objects;
+drop policy if exists "headshots: replace own, club admins their members'" on storage.objects;
+drop policy if exists "headshots: delete own, club admins their members'" on storage.objects;
+
+create policy "headshots: club members view" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'headshots' and (select public.has_any_access()));
+
+create policy "headshots: upload own, club admins their members'" on storage.objects
+  for insert to authenticated
+  with check (
+    bucket_id = 'headshots'
+    and public.profile_id_from_path(name) is not null
+    and (public.profile_id_from_path(name) = (select public.current_profile_id())
+         or public.can_admin_profile(public.profile_id_from_path(name)))
+  );
+
+create policy "headshots: replace own, club admins their members'" on storage.objects
+  for update to authenticated
+  using (
+    bucket_id = 'headshots'
+    and public.profile_id_from_path(name) is not null
+    and (public.profile_id_from_path(name) = (select public.current_profile_id())
+         or public.can_admin_profile(public.profile_id_from_path(name)))
+  )
+  with check (
+    bucket_id = 'headshots'
+    and public.profile_id_from_path(name) is not null
+    and (public.profile_id_from_path(name) = (select public.current_profile_id())
+         or public.can_admin_profile(public.profile_id_from_path(name)))
+  );
+
+create policy "headshots: delete own, club admins their members'" on storage.objects
+  for delete to authenticated
+  using (
+    bucket_id = 'headshots'
+    and public.profile_id_from_path(name) is not null
+    and (public.profile_id_from_path(name) = (select public.current_profile_id())
+         or public.can_admin_profile(public.profile_id_from_path(name)))
+  );
+
+-- Make the site's API see the changes straight away.
 notify pgrst, 'reload schema';
+
+commit;
