@@ -148,9 +148,8 @@ domain `site.thenines.club` comes from the `CNAME` file. Add a DNS `CNAME` recor
 
 ### 4. Logo and favicons
 
-TODO: upload `favicon.png` (the logo, used on the pages too), `favicon.ico` and `favicon-180.png`
-(Apple touch icon) to the repo root. Every page already links to them. Until they are uploaded, the
-pages show the name "The Nines" without the logo.
+`favicon.png` (the logo, also shown on the pages), `favicon.ico` and `favicon-180.png` (Apple touch icon)
+are in the repo root, copied from the map site so both sites share the same logo.
 
 ## Adding members
 
