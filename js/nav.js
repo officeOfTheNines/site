@@ -9,6 +9,7 @@
   var LINKS = [
     { key: 'home', label: 'Home', href: 'index.html' },
     { key: 'directory', label: 'Directory', href: 'directory.html' },
+    { key: 'recos', label: 'Recos', href: 'recos.html' },
     { key: 'map', label: 'Map', href: (window.NINES_CLUB && window.NINES_CLUB.MAP_URL) || 'https://map.thenines.club', external: true },
     { key: 'admin', label: 'Admin', href: 'admin.html', adminOnly: true }
   ];

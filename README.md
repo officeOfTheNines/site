@@ -21,6 +21,7 @@ database password anywhere in this repo.
 | `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
+| `members/recos.html` | **Recos**: restaurants members recommend, on a map shared across clubs. Add a reco, filter by name, edit or delete your own. Separate from the club's dinner map. |
 | `members/admin.html` | Club admins only: add a member (access and card together), remove access, remove from club, edit, hide or show cards, change emails, and manage brigadier groups, all for this site's club. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/club.js` | Which club this copy of the site serves: id, name, language, tagline, map address (The Nines). |
@@ -28,9 +29,10 @@ database password anywhere in this repo.
 | `clubs/<slug>/` | Every other club: its `club.js` and logo. `clubs/lesronds/` is published at `/lesronds/`. |
 | `scripts/build-site.sh`, `.github/workflows/publish.yml` | Build and publish the site on every merge: The Nines at the root, each club in its own folder. |
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
-| `js/nav.js` | The shared top bar on every members page (Home, Directory, Map, Admin, Sign out). |
+| `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
-| `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js` | Page scripts. |
+| `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
 | `supabase/schema.sql` | The complete current schema for a new project (all clubs): tables, security rules, functions, the headshots storage bucket, the clubs and the first admins. |
 | `supabase/migrations/` | One file per step, to upgrade a project that is already running. |
@@ -135,6 +137,68 @@ clubs. All clubs share one web address, so one sign-in covers them all.
   brigadier_groups (id)` column, so the "Brigadiers" shown for a dinner (today a free-text string such as
   "James S.") come from that group's members.
 
+### Recos (step 7)
+
+Members' own restaurant recommendations, on a map in the members area (`members/recos.html`, "Recos" in
+the top bar). The club's official dinner map (map.thenines.club, ronds.thenines.club) is separate and
+unchanged.
+
+- **Places and comments.** `reco_places` holds one row per restaurant (name, address, coordinates, an
+  optional OpenStreetMap id). `reco_comments` holds the recos: who wrote it, the club they posted as,
+  a description of up to 300 characters, and who can see it.
+- **Who can see a reco** (the slider when adding one):
+  - **Everyone** (default): members of every club.
+  - **My club**: only members of the club it was posted as.
+  - **Only me**: only the author. Super admins can also see it, to moderate.
+- **A restaurant appears on someone's map only if they can see at least one of its recos** (or added
+  it). Nothing else gives it away: no count, error or "already recommended" warning mentions a
+  restaurant they cannot see.
+- **Each line reads** "FirstName L., Club name: description. 17 Nov 2026". Emails and phone numbers are
+  never shown.
+- **Posting.** Members post only as themselves and only as a club they belong to. Members of several
+  clubs choose which one ("Post as"; the default is the club of the site they are on). People with no
+  card (office accounts) cannot post.
+- **Duplicates.** Before adding, the site asks the database for a restaurant the member can already
+  see with the same OpenStreetMap id, or within about 30 m with a similar name. If there is one, it
+  shows "Already recommended" with its recos, and the new reco is added to that restaurant instead of
+  making a second pin. If the only match is one the member cannot see, the database quietly adds the
+  reco to it without saying so. The member then sees that restaurant under the name and address it
+  was first saved with, which may differ slightly from what they typed.
+- **Editing.** Authors edit or delete their own recos from the map popup, including who can see them.
+  Club admins can delete recos posted as their club; super admins can delete any. Deleting a
+  restaurant's last reco removes the restaurant.
+- **Database rules.** New recos go through the function `add_reco()` only; reading goes through
+  `reco_feed()` and row-level security. Who added a restaurant (`created_by`) is never readable from
+  the site. Visitors who are not signed in get nothing.
+
+#### Finding a restaurant
+
+The search box uses **Photon** (photon.komoot.io), a free search over **OpenStreetMap** data. To respect
+its fair-use terms, it searches only after the member stops typing (0.6 s), at most once a second, keeps
+a small cache, and asks for 6 results. Results are biased towards the club's city.
+
+A member can also **paste a Google Maps link** (`google.com/maps/place/…`): the name and coordinates are
+read from the link itself, and nothing is fetched from Google. Short links (`maps.app.goo.gl/…`) cannot be
+read without asking Google, so the page asks the member to open the link and paste the full address.
+Either way, the member confirms the spot by dragging the pin on a small map.
+
+**Adding Google Places later (not done now).** What would change:
+
+1. Get a Google Maps Platform API key with the Places API enabled, restricted by HTTP referrer to
+   `site.thenines.club`, with a monthly spending cap. A browser key is public, so the restrictions are what
+   protect it.
+2. Replace the body of `searchPlaces()` in `js/places-search.js` with a Places Autocomplete call (Place
+   Autocomplete then Place Details, with session tokens so each search is billed once). The rest of the site
+   would not change.
+3. Add Google's hosts (`maps.googleapis.com`, `places.googleapis.com`) to `connect-src` (and `script-src`
+   if using Google's script) in the Content-Security-Policy of `members/recos.html`.
+4. Store Google's `place_id` as `external_id` (for example `google:ChIJ…`) so duplicates match exactly.
+   Google's terms allow keeping place ids indefinitely, but not caching names, addresses or coordinates
+   from Google beyond short limits. So either keep what the member confirms on the map (their own entry),
+   or refresh the details from Google when showing them.
+5. Show "Powered by Google" next to the search results, as Google's terms require, and follow their rules
+   on displaying Google results on a non-Google map.
+
 ### Directory privacy
 
 - Members only see a club's directory through the database function `directory(club)`, and only for
@@ -167,6 +231,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
 | `migrations/005_multi_club.sql` | Step 5: several clubs. Adds `clubs`, `club_access` (replacing `allowed_emails`; every existing row moves to club 1), `super_admins` and `club_profiles` (each card's bio and settings move there, club 1), puts brigadier groups in club 1, and makes every rule and function per club. Runs as one transaction: if anything fails, nothing changes. |
 | `migrations/004_change_email.sql` | Step 4: `admin_change_email()`, so an admin can move a member to a new email in one action. Only adds a function. |
@@ -393,6 +458,40 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
 - [ ] **lesronds.thenines.club forwards to site.thenines.club/lesronds/.** To do: after the Squarespace
   forwarding is set up.
 
+#### Step 7: Recos
+
+Ran: every rule below on a local copy of the database with The Nines and Les Ronds members loaded (people
+in both clubs, admins, a super admin, and a visitor who is not signed in), and the page in Chromium with a
+fake server (English and French, phone layout). To do: live, with two or three real accounts, after
+running `007_recos.sql`. Use members of different clubs, one of them not a super admin.
+
+- [ ] **1. An "Only me" reco is invisible to others.** Member A adds a new restaurant with the slider on
+  **Only me**. Member B (another club, not a super admin) sees no pin and no entry in the list. B then
+  adds the same restaurant: there is **no** "Already recommended" warning. B's reco appears on the map
+  as normal, and A's line is still not shown to B.
+- [ ] **2. "My club" recos stay within the club.** A member of The Nines adds a reco with **My club**.
+  Another Nines member sees it; a Les Ronds-only member sees neither the line nor, if it is the only reco,
+  the pin.
+- [ ] **3. Nobody can post as a club they are not in.** The "Post as" choice lists only the member's own
+  clubs. In the SQL editor, posting as another club is refused:
+
+  ```sql
+  begin;
+  set local role authenticated;
+  select set_config('request.jwt.claims', json_build_object('sub', 'LOGIN-ID-OF-A-NINES-ONLY-MEMBER', 'role', 'authenticated')::text, true);
+  select * from public.add_reco(2, 'Test', null, 48.85, 2.35, null, 'test', 'everyone');
+  -- expect: ERROR  You can only post as a club you belong to.
+  rollback;
+  ```
+- [ ] **4. A duplicate adds a reco, not a second pin.** Member B searches for a restaurant A has already
+  recommended (visible to B). Pressing **Add my reco** shows "Already recommended" with A's reco; pressing
+  **Add my reco to it** adds B's line to the same pin. There is still one pin, now with two recos.
+- [ ] **5. Deleting the last reco removes the pin.** On a restaurant with only your reco, press
+  **Delete** in the popup and confirm. The pin and the list entry disappear.
+- [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
+  posted as their club; super admins on every line.
+- [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
 #### Seeing the directory as a particular member (SQL editor)
 
 Replace the id with a real login id from `select id, email from public.members;`. Nothing is changed.
@@ -436,7 +535,15 @@ curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/directory"
 curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/storage/v1/object/list/headshots" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{\"prefix\":\"\"}"
 ```
 
-The last one should return an error or an empty list `[]`, never file names.
+```bash
+curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/reco_feed" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9" -H "Content-Type: application/json" -d "{}"
+```
+
+```bash
+curl -s "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/reco_places?select=*" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9"
+```
+
+The headshots one should return an error or an empty list `[]`, never file names.
 
 You can also check in the SQL editor that `anon` has no privileges:
 
@@ -455,7 +562,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
 - Emailed links use Supabase's "implicit" flow, so a link works even when it is opened in a different
   browser or app from the one that asked for it.
 - Each page has a Content-Security-Policy that only allows this site, jsDelivr, Google Fonts and the
-  Supabase project.
+  Supabase project. `members/recos.html` also allows the map tiles (CARTO, basemaps.cartocdn.com) and the
+  place search (photon.komoot.io).
+- Leaflet `1.9.4` (the Recos map) is loaded from jsDelivr with subresource-integrity hashes, like supabase-js.
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.
 - Text from the database is always inserted with `textContent`, never `innerHTML`.

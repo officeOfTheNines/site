@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://bfblobnjrhcacwoqszwh.supabase.co https://a.basemaps.cartocdn.com https://b.basemaps.cartocdn.com https://c.basemaps.cartocdn.com https://d.basemaps.cartocdn.com; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co https://photon.komoot.io; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <title>Recos · The Nines</title>
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="apple-touch-icon" href="../favicon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body aria-busy="true">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" data-nav="recos"></header>
+
+  <main id="main">
+    <noscript>
+      <p class="message error">This page needs JavaScript.</p>
+    </noscript>
+
+    <div data-state="loading" class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Checking your membership…</span>
+    </div>
+
+    <section data-state="denied" class="panel" hidden aria-labelledby="denied-heading">
+      <h1 id="denied-heading">Not on the member list</h1>
+      <p>Your email is not on the member list. Please contact the office.</p>
+      <p class="muted">Signed in as <span data-slot="denied-email"></span></p>
+      <button type="button" class="button" data-action="sign-out">Sign out</button>
+    </section>
+
+    <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
+      <h1 id="error-heading">Something went wrong</h1>
+      <p class="message error" role="alert" data-slot="error-message"></p>
+      <div class="actions">
+        <a class="button" href="recos.html">Try again</a>
+        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
+      </div>
+    </section>
+
+    <div data-state="ready" hidden>
+      <div class="page-head">
+        <h1>Recos</h1>
+        <button type="button" class="button" id="add-open">Add a reco</button>
+      </div>
+      <p class="muted">Restaurants members recommend. Separate from the club's dinner map.</p>
+
+      <div id="recos-error" class="message error" role="alert"></div>
+      <div id="recos-status" class="message success" role="status" aria-live="polite"></div>
+
+      <section id="add-panel" class="panel" hidden aria-labelledby="add-heading">
+        <h2 id="add-heading">Add a reco</h2>
+
+        <div class="field">
+          <label for="place-query">Find the restaurant</label>
+          <input id="place-query" type="search" autocomplete="off" spellcheck="false" aria-describedby="place-query-hint">
+          <p id="place-query-hint" class="hint">Type its name, or paste a Google Maps link.</p>
+        </div>
+        <p id="search-status" class="muted small" role="status" aria-live="polite"></p>
+        <ul id="search-results" class="search-results"></ul>
+
+        <div id="place-step" hidden>
+          <div class="field">
+            <label for="place-name">Name</label>
+            <input id="place-name" type="text" maxlength="120" required>
+          </div>
+          <div class="field">
+            <label for="place-address">Address <span class="muted">(optional)</span></label>
+            <input id="place-address" type="text" maxlength="300">
+          </div>
+          <p class="hint">Drag the pin if it is not exactly on the restaurant.</p>
+          <div id="add-map" class="recos-map recos-map-small" role="application" aria-label="Location of the restaurant: drag the pin to correct it"></div>
+
+          <div class="field">
+            <label for="reco-body">Your reco</label>
+            <textarea id="reco-body" rows="3" maxlength="300" required aria-describedby="reco-count"></textarea>
+            <p id="reco-count" class="hint">0 of 300 characters</p>
+          </div>
+
+          <div class="field">
+            <label for="reco-visibility">Who can see it</label>
+            <input id="reco-visibility" class="visibility-slider" type="range" min="0" max="2" step="1" value="0" aria-describedby="reco-visibility-value">
+            <div class="visibility-labels" aria-hidden="true"><span>Everyone</span><span>My club</span><span>Only me</span></div>
+            <p id="reco-visibility-value" class="hint"></p>
+          </div>
+
+          <div class="field" id="post-as-row" hidden>
+            <label for="post-as">Post as</label>
+            <select id="post-as"></select>
+          </div>
+
+          <div id="duplicate-box" class="message duplicate" hidden>
+            <p><strong>Already recommended</strong></p>
+            <ul id="duplicate-comments" class="reco-lines"></ul>
+            <p class="small">Your reco will be added to this restaurant.</p>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="button" id="reco-submit">Add my reco</button>
+            <button type="button" class="button secondary" id="add-cancel">Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="field search-field">
+        <label for="filter">Filter by name</label>
+        <input id="filter" type="search" autocomplete="off" spellcheck="false">
+      </div>
+      <div id="recos-map" class="recos-map" role="application" aria-label="Map of recommended restaurants"></div>
+      <p id="recos-count" class="muted" role="status" aria-live="polite"></p>
+      <p id="recos-empty" class="panel" hidden>No recos yet. Be the first to add one.</p>
+      <ul id="place-list" class="place-list"></ul>
+    </div>
+
+    <dialog id="edit-dialog" class="dialog" aria-labelledby="edit-title">
+      <form method="dialog" novalidate>
+        <h2 id="edit-title">Edit your reco</h2>
+        <div class="field">
+          <label for="edit-body">Your reco</label>
+          <textarea id="edit-body" rows="3" maxlength="300"></textarea>
+        </div>
+        <div class="field">
+          <label for="edit-visibility">Who can see it</label>
+          <select id="edit-visibility">
+            <option value="everyone">Everyone</option>
+            <option value="club">My club</option>
+            <option value="me">Only me</option>
+          </select>
+        </div>
+        <p id="edit-error" class="message error" role="alert"></p>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button" id="edit-save">Save</button>
+          <button type="submit" value="cancel" class="button secondary" formnovalidate>Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-reco-dialog" class="dialog" aria-labelledby="delete-reco-title">
+      <form method="dialog">
+        <h2 id="delete-reco-title">Delete this reco?</h2>
+        <p>This cannot be undone. If it is the last reco for the restaurant, the restaurant disappears from the map.</p>
+        <div class="actions">
+          <button type="submit" value="confirm" class="button danger">Delete</button>
+          <button type="submit" value="cancel" class="button secondary">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+
+  <script src="../js/club.js"></script>
+  <script src="../js/i18n.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+  <script src="../js/config.js"></script>
+  <script src="../js/nav.js"></script>
+  <script src="../js/site.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/places-search.js"></script>
+  <script src="../js/recos.js"></script>
+</body>
+</html>
