@@ -563,7 +563,7 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
   browser or app from the one that asked for it.
 - Each page has a Content-Security-Policy that only allows this site, jsDelivr, Google Fonts and the
   Supabase project. `members/recos.html` also allows the map tiles (CARTO, basemaps.cartocdn.com) and the
-  place search (photon.komoot.io).
+  place search (photon.komoot.io). The tiles use the same CARTO key as the dinner map (public by design; allowed domains are set in the CARTO dashboard).
 - Leaflet `1.9.4` (the Recos map) is loaded from jsDelivr with subresource-integrity hashes, like supabase-js.
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.

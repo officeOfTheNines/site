@@ -19,7 +19,9 @@
     me: 'Only me: nobody else can see it.'
   };
   var CENTRES = { 1: [51.5072, -0.1276], 2: [48.8566, 2.3522] }; // London, Paris
-  var TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  // CARTO basemap key, the same one the dinner map uses. It is a browser key, so it is public by design;
+  // the domains allowed to use it are set in the CARTO dashboard.
+  var TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_4qad_1_15e6672081357063faf80bbe';
   var ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/attributions">CARTO</a>';
   var dateFormat = new Intl.DateTimeFormat(N.lang === 'fr' ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   var collator = new Intl.Collator(N.lang === 'fr' ? 'fr' : 'en-GB', { sensitivity: 'base' });
