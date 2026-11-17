@@ -8,8 +8,6 @@
 // The repo is public.
 window.NINES_CONFIG = Object.freeze({
   SUPABASE_URL: 'https://bfblobnjrhcacwoqszwh.supabase.co',
-  SUPABASE_ANON_KEY: 'sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9',
-  // Which club this site belongs to (see the clubs table): 1 = The Nines, 2 = Les Ronds.
-  CLUB_ID: 1,
-  CLUB_NAME: 'The Nines'
+  SUPABASE_ANON_KEY: 'sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9'
+  // Which club a page serves (id, name, language...) is in js/club.js.
 });

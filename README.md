@@ -12,7 +12,7 @@ Login and private data live in Supabase.
 project URL and the publishable (anon) key in `js/config.js`. Never add any other Supabase key or a
 database password anywhere in this repo.
 
-## What is here (steps 1 to 5)
+## What is here
 
 | File | What it does |
 | --- | --- |
@@ -22,7 +22,11 @@ database password anywhere in this repo.
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
 | `members/admin.html` | Club admins only: add a member (access and card together), remove access, remove from club, edit, hide or show cards, change emails, and manage brigadier groups, all for this site's club. |
-| `js/config.js` | Supabase project URL and publishable key (public by design), and which club this site belongs to (`CLUB_ID`). |
+| `js/config.js` | Supabase project URL and publishable key (public by design). |
+| `js/club.js` | Which club this copy of the site serves: id, name, language, tagline, map address (The Nines). |
+| `js/i18n.js` | Shows the pages in the club's language: French wording for every English text, and the club's name and map on the pages. |
+| `clubs/<slug>/` | Every other club: its `club.js` and logo. `clubs/lesronds/` is published at `/lesronds/`. |
+| `scripts/build-site.sh`, `.github/workflows/publish.yml` | Build and publish the site on every merge: The Nines at the root, each club in its own folder. |
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
@@ -46,9 +50,28 @@ database password anywhere in this repo.
 
 ### Clubs, access, profiles and cards (step 5)
 
-One Supabase project serves several clubs: **The Nines** (club 1, site.thenines.club) and **Les Ronds**
-(club 2, lesronds.thenines.club, site still to come). Each site knows its own club from `CLUB_ID` in
-`js/config.js`. One person has one login and one shared profile, and can belong to several clubs.
+One Supabase project serves several clubs: **The Nines** (club 1, site.thenines.club, English) and
+**Dîner des Ronds** (club 2, site.thenines.club/lesronds/, French). Each copy of the site knows its own
+club from `js/club.js`. One person has one login and one shared profile, and can belong to several
+clubs. All clubs share one web address, so one sign-in covers them all.
+
+### Clubs, folders and languages
+
+- **One codebase, one folder per club.** The Nines' pages are the site root. Each other club has a folder
+  in `clubs/` (its `club.js` and logo); on every merge GitHub builds the site with a copy of the pages in
+  that club's folder (`scripts/build-site.sh`). Nothing is copied by hand.
+- **Language:** `LANG` in the club's `club.js` (`en` or `fr`). The pages are written in English and
+  `js/i18n.js` shows them in French when asked, including messages that appear later. Names and bios are
+  never translated. To change a French wording, edit `js/i18n.js`.
+- **Name, tagline, footer and map** on the pages come from the club's `club.js`. The `clubs` table holds
+  the same names and addresses for the club pickers and the Map menu (`site_url`, `map_url`).
+- **Club picker:** choosing another club opens the same page in that club's folder, in its language.
+- **Short address:** lesronds.thenines.club forwards to site.thenines.club/lesronds/ (Squarespace →
+  Domains → thenines.club → forwarding). The address bar then shows site.thenines.club/lesronds/.
+- **Adding a club later:** add its row to the `clubs` table (SQL), a folder `clubs/<slug>/` with its
+  `club.js` (copy `clubs/lesronds/club.js`) and logo, then merge.
+- **Placeholder logo:** Dîner des Ronds uses a plain white circle until its logo arrives; replace the three
+  `favicon` files in `clubs/lesronds/`.
 
 | Table | Means | Created by |
 | --- | --- | --- |
@@ -144,6 +167,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
 | `migrations/005_multi_club.sql` | Step 5: several clubs. Adds `clubs`, `club_access` (replacing `allowed_emails`; every existing row moves to club 1), `super_admins` and `club_profiles` (each card's bio and settings move there, club 1), puts brigadier groups in club 1, and makes every rule and function per club. Runs as one transaction: if anything fails, nothing changes. |
 | `migrations/004_change_email.sql` | Step 4: `admin_change_email()`, so an admin can move a member to a new email in one action. Only adds a function. |
 | `migrations/003_brigadier_groups.sql` | Step 3: brigadier groups (`brigadier_groups`, `brigadier_group_members`), co-brigadiers on directory cards, and the admin actions to save and delete groups. Only adds things. |
@@ -166,11 +190,13 @@ These were set up already. Check them again if login links go to the wrong place
   Workspace). Otherwise confirmation, password reset and sign-in emails will not arrive. Google sign-in
   needs no email, so it works either way.
 
-### 3. Turn on GitHub Pages
+### 3. Publishing (GitHub Pages)
 
-In the GitHub repo: **Settings → Pages**. Set the source to the `main` branch, root folder. The custom
-domain `site.thenines.club` comes from the `CNAME` file. Add a DNS `CNAME` record for `site` pointing to
-`officeofthenines.github.io`, then tick **Enforce HTTPS** once it is offered.
+The site is built and published by GitHub on every merge to `main` (`.github/workflows/publish.yml`), so
+each club's folder is created automatically. One-off setting: in the GitHub repo, **Settings → Pages →
+Build and deployment → Source: GitHub Actions**. The custom domain stays `site.thenines.club` (DNS `CNAME`
+record for `site` pointing to `officeofthenines.github.io`, **Enforce HTTPS** ticked). Each publish shows
+in the **Actions** tab; **Run workflow** there republishes without a code change.
 
 ### 4. Logo and favicons
 
@@ -356,6 +382,17 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
   club 2, phone layout and touch targets). To do: live; a super admin can try it now, before Les Ronds has
   members.
 
+#### Dîner des Ronds site (French)
+
+- [ ] **site.thenines.club/lesronds/ shows Dîner des Ronds in French (home, login, member pages, admin,
+  messages), with its placeholder logo and map; The Nines at the root is unchanged.** Ran: on the built
+  site in Chromium (all earlier checks still pass at the root; a scan of the visible French pages found no
+  English wording left). To do: live, after switching Pages to GitHub Actions.
+- [ ] **The club picker opens the same page in the other club's folder, in its language, signed in.**
+  Ran: in Chromium. To do: live.
+- [ ] **lesronds.thenines.club forwards to site.thenines.club/lesronds/.** To do: after the Squarespace
+  forwarding is set up.
+
 #### Seeing the directory as a particular member (SQL editor)
 
 Replace the id with a real login id from `select id, email from public.members;`. Nothing is changed.
@@ -431,8 +468,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
 - "Remove from club" removes the person's headshot too when their profile is deleted (they are in no
   other club). A profile deleted directly in the Supabase table editor leaves its photo in the bucket
   (Supabase does not allow deleting storage files from SQL); tidy it up in **Storage → headshots** if needed.
-- **Club config:** `CLUB_ID` and `CLUB_NAME` in `js/config.js` say which club a site serves (1 = The
-  Nines). The Les Ronds site will be the same code with `CLUB_ID: 2` and its own branding.
+- **Club config:** `js/club.js` (The Nines) and `clubs/<slug>/club.js` (other clubs) say which club a
+  copy of the site serves, in which language. Kept in files, not the database, because pages need it
+  before anyone signs in.
 - **Maps (planned):** both club maps (map.thenines.club for club 1, ronds.thenines.club for club 2) stay
   public. Each restaurant row read from their Google Sheets carries a `club_id`, so later members signed
   in to that club may see extra detail. Nothing is gated yet.

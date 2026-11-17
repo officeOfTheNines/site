@@ -16,7 +16,7 @@
   var client = N.client;
   var el = N.el;
   var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-  var dateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  var dateFormat = new Intl.DateTimeFormat(N.lang === 'fr' ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   var collator = new Intl.Collator('en-GB', { sensitivity: 'base' });
 
   var errorBox = document.getElementById('admin-error');

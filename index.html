@@ -20,19 +20,21 @@
   <main id="main">
     <section class="hero">
       <img class="hero-logo" data-logo src="favicon.png" alt="" width="120" height="120">
-      <h1>The Nines</h1>
-      <p>A private dining club in London.</p>
+      <h1 data-club-name>The Nines</h1>
+      <p data-club-tagline>A private dining club in London.</p>
       <div class="actions">
         <a class="button" href="login.html">Member login</a>
-        <a class="button secondary" href="https://map.thenines.club">See the map</a>
+        <a class="button secondary" href="https://map.thenines.club" data-club-map>See the map</a>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
-    <p>The Nines · London</p>
+    <p data-club-footer>The Nines · London</p>
   </footer>
 
+  <script src="js/club.js"></script>
+  <script src="js/i18n.js"></script>
   <script src="js/site.js"></script>
 </body>
 </html>

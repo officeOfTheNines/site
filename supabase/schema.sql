@@ -118,8 +118,8 @@ create index if not exists brigadier_group_members_profile_idx on public.brigadi
 -- ---------------------------------------------------------------------------
 
 insert into public.clubs (id, slug, name, site_url, map_url) values
-  (1, 'nines',    'The Nines', 'https://site.thenines.club',     'https://map.thenines.club'),
-  (2, 'lesronds', 'Les Ronds', 'https://lesronds.thenines.club', 'https://ronds.thenines.club')
+  (1, 'nines',    'The Nines',       'https://site.thenines.club/',          'https://map.thenines.club'),
+  (2, 'lesronds', 'Dîner des Ronds', 'https://site.thenines.club/lesronds/', 'https://ronds.thenines.club')
 on conflict (id) do nothing;
 
 insert into public.super_admins (email, added_by) values ('jbsolanet@gmail.com', 'schema.sql')
