@@ -309,7 +309,8 @@
       showStatus('Welcome! Check your profile and press "Save profile". Email and phone stay hidden unless you tick the boxes.');
     }
 
-    if (!state.editingOther) document.getElementById('back-link').setAttribute('href', N.withClub('directory.html', club));
+    var backLink = document.getElementById('back-link');
+    if (!state.editingOther && backLink) backLink.setAttribute('href', N.withClub('directory.html', club));
     if (!club.isHome && !state.editingOther) {
       var intro = document.getElementById('profile-intro');
       intro.textContent = 'Your card in ' + club.name + '. ' + intro.textContent;

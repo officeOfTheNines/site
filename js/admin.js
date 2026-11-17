@@ -629,9 +629,11 @@
     var result = await client.from('super_admins').select('email').order('email', { ascending: true });
     if (result.error || !result.data || !result.data.length) return;
     var list = document.getElementById('super-admins-list');
+    var section = document.getElementById('super-admins');
+    if (!list || !section) return; // an older cached page without this section
     list.replaceChildren();
     result.data.forEach(function (row) { list.appendChild(el('li', { text: row.email })); });
-    document.getElementById('super-admins').hidden = false;
+    section.hidden = false;
   }
 
   N.guardMembersPage().then(function (accessInfo) {

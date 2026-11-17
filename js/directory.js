@@ -75,7 +75,9 @@
     if (!access) return;
     club = N.pickClub(access, false);
     N.renderClubPicker(document.getElementById('club-picker'), club);
-    document.getElementById('edit-profile-link').setAttribute('href', N.withClub('profile.html', club));
+    // (guarded: a browser can briefly pair this script with an older cached page)
+    var editLink = document.getElementById('edit-profile-link');
+    if (editLink) editLink.setAttribute('href', N.withClub('profile.html', club));
     if (!club.isHome) document.title = 'Directory: ' + club.name + ' · The Nines';
     N.showState('ready');
     load().catch(function (error) {
