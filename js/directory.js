@@ -41,8 +41,10 @@
       : people.length + (people.length === 1 ? ' member' : ' members');
   }
 
+  var club = null; // the club shown: this site's own, or the one chosen in the picker
+
   async function load() {
-    var result = await N.client.rpc('directory', { p_club: N.clubId });
+    var result = await N.client.rpc('directory', { p_club: club.id });
     if (result.error) throw result.error;
     var rows = (result.data || []).slice().sort(function (a, b) {
       return collator.compare(a.display_name || '', b.display_name || '');
@@ -71,6 +73,10 @@
 
   N.guardMembersPage().then(function (access) {
     if (!access) return;
+    club = N.pickClub(access, false);
+    N.renderClubPicker(document.getElementById('club-picker'), club);
+    document.getElementById('edit-profile-link').setAttribute('href', N.withClub('profile.html', club));
+    if (!club.isHome) document.title = 'Directory: ' + club.name + ' · The Nines';
     N.showState('ready');
     load().catch(function (error) {
       loadingNode.hidden = true;

@@ -49,7 +49,8 @@
   var deleteDialog = document.getElementById('delete-dialog');
   var deleteNameNode = document.getElementById('delete-name');
   var deleteNotes = document.getElementById('delete-notes');
-  var clubId = N.clubId;
+  var club = null;   // the club this page manages: this site's, or one chosen in the picker
+  var clubId = null;
 
   var groupsLoading = document.getElementById('groups-loading');
   var groupsEmpty = document.getElementById('groups-empty');
@@ -346,7 +347,7 @@
       await refresh();
       return;
     }
-    window.location.href = 'profile.html?profile=' + encodeURIComponent(result.data) + '&new=1';
+    window.location.href = N.withClub('profile.html?profile=' + encodeURIComponent(result.data) + '&new=1', club);
   });
 
   // ---- Directory cards ----
@@ -364,7 +365,7 @@
 
       var edit = el('a', {
         className: 'button secondary',
-        href: 'profile.html?profile=' + encodeURIComponent(card.id),
+        href: N.withClub('profile.html?profile=' + encodeURIComponent(card.id), club),
         'aria-label': 'Edit the card of ' + name,
         text: 'Edit'
       });
@@ -455,7 +456,7 @@
       if (info.deletes_profile && info.photo_path) await P.removePhoto(card.id);
       var result = await client.rpc('admin_remove_from_club', { p_club: clubId, p_email: card.email, p_delete_small_groups: small.length > 0 });
       if (result.error) throw result.error;
-      showStatus(name + ' was removed from ' + N.clubName + '.' + (small.length ? ' Brigadier group ' + small.join(', ') + ' was deleted.' : ''));
+      showStatus(name + ' was removed from ' + club.name + '.' + (small.length ? ' Brigadier group ' + small.join(', ') + ' was deleted.' : ''));
     } catch (error) {
       showError('Could not remove ' + name + '. ' + (error.message || dbError(error)));
     } finally {
@@ -623,12 +624,33 @@
     await refresh();
   }
 
+  // Super admins see who the other super admins are (the database returns nothing to anyone else).
+  async function loadSuperAdmins() {
+    var result = await client.from('super_admins').select('email').order('email', { ascending: true });
+    if (result.error || !result.data || !result.data.length) return;
+    var list = document.getElementById('super-admins-list');
+    list.replaceChildren();
+    result.data.forEach(function (row) { list.appendChild(el('li', { text: row.email })); });
+    document.getElementById('super-admins').hidden = false;
+  }
+
   N.guardMembersPage().then(function (accessInfo) {
     if (!accessInfo) return;
-    if (accessInfo.role !== 'admin') { N.showState('not-admin'); return; }
+    // the clubs this person administers (super admins: every club)
+    club = N.pickClub(accessInfo, true);
+    if (club.role !== 'admin') {
+      var firstAdminClub = (accessInfo.clubs || []).find(function (c) { return c.role === 'admin'; });
+      if (!firstAdminClub) { N.showState('not-admin'); return; }
+      window.location.replace('admin.html?club=' + encodeURIComponent(firstAdminClub.club_id));
+      return;
+    }
+    clubId = club.id;
     myEmail = (accessInfo.session.user.email || '').toLowerCase();
-    N.setText('[data-slot="club-name"]', N.clubName);
+    N.setText('[data-slot="club-name"]', club.name);
+    if (!club.isHome) document.title = 'Admin: ' + club.name + ' · The Nines';
+    N.renderClubPicker(document.getElementById('club-picker'), club);
     N.showState('ready');
     refresh();
+    loadSuperAdmins();
   });
 })();

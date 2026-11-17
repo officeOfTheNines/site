@@ -53,7 +53,7 @@
 
   var list = make('ul', { id: 'nav-menu', class: 'nav-menu' });
   LINKS.forEach(function (link) {
-    var item = make('li', link.adminOnly ? { 'data-admin-only': true, hidden: true } : null);
+    var item = make('li', link.adminOnly ? { 'data-admin-only': true, hidden: true } : (link.key === 'map' ? { id: 'nav-map-item' } : null));
     var attrs = { class: 'nav-link', href: link.href };
     if (link.external) {
       attrs.target = '_blank';
@@ -89,4 +89,43 @@
   document.addEventListener('click', function (event) {
     if (nav.classList.contains('is-open') && !nav.contains(event.target)) setOpen(false);
   });
+
+  // For people in several clubs, "Map" becomes a small menu with each club's map (all public).
+  // Called by auth.js once it knows the person's clubs.
+  function setClubs(clubs) {
+    var withMaps = (clubs || []).filter(function (c) { return c.map_url && /^https:\/\//.test(c.map_url); });
+    var mapItem = document.getElementById('nav-map-item');
+    if (!mapItem || withMaps.length < 2) return;
+
+    var button = make('button', { type: 'button', class: 'nav-link nav-menu-button', 'aria-expanded': 'false', 'aria-controls': 'nav-map-menu' });
+    button.appendChild(make('span', null, 'Map'));
+    button.appendChild(make('span', { class: 'nav-caret', 'aria-hidden': 'true' }, '▾'));
+    var sub = make('ul', { id: 'nav-map-menu', class: 'nav-submenu', hidden: true });
+    withMaps.forEach(function (c) {
+      var li = make('li');
+      var a = make('a', { class: 'nav-link', href: c.map_url, target: '_blank', rel: 'noopener' }, c.name + ' map');
+      a.appendChild(make('span', { class: 'visually-hidden' }, ' (opens in a new tab)'));
+      li.appendChild(a);
+      sub.appendChild(li);
+    });
+    mapItem.classList.add('has-submenu');
+    mapItem.replaceChildren(button, sub);
+
+    function openSub(open) {
+      button.setAttribute('aria-expanded', String(open));
+      sub.hidden = !open;
+    }
+    button.addEventListener('click', function (event) {
+      event.stopPropagation();
+      openSub(sub.hidden);
+    });
+    document.addEventListener('click', function (event) {
+      if (!sub.hidden && !mapItem.contains(event.target)) openSub(false);
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && !sub.hidden) { openSub(false); button.focus(); }
+    });
+  }
+
+  window.NinesNav = { setClubs: setClubs };
 })();

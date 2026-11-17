@@ -39,6 +39,8 @@
   var statusBox = document.getElementById('form-status');
   var cardPreview = document.getElementById('card-preview');
 
+  var club = null; // the club whose card is edited
+
   var state = {
     profile: null,        // the row being edited
     isAdmin: false,
@@ -168,7 +170,7 @@
         cardRow.foreign_member = foreign.checked;
       }
       var card = await client.from('club_profiles').update(cardRow)
-        .eq('club_id', N.clubId).eq('profile_id', id).select(CARD_FIELDS);
+        .eq('club_id', club.id).eq('profile_id', id).select(CARD_FIELDS);
       if (card.error) throw card.error;
       if (!card.data || card.data.length !== 1) throw new Error('The card could not be saved. Please reload and try again.');
 
@@ -209,11 +211,11 @@
   async function loadCoBrigadiers(profileId, asAdmin) {
     try {
       if (!asAdmin) {
-        var mine = await client.rpc('my_co_brigadiers', { p_club: N.clubId });
+        var mine = await client.rpc('my_co_brigadiers', { p_club: club.id });
         return mine.error ? [] : (mine.data || []);
       }
       // this club's groups that include the card
-      var clubGroups = await client.from('brigadier_groups').select('id').eq('club_id', N.clubId);
+      var clubGroups = await client.from('brigadier_groups').select('id').eq('club_id', club.id);
       if (clubGroups.error || !clubGroups.data.length) return [];
       var mineIn = await client.from('brigadier_group_members').select('group_id')
         .eq('profile_id', profileId).in('group_id', clubGroups.data.map(function (g) { return g.id; }));
@@ -223,7 +225,7 @@
       if (others.error || !others.data.length) return [];
       // names of those co-brigadiers whose card in this club is listed
       var cards = await client.from('club_profiles').select('listed, profiles(display_name)')
-        .eq('club_id', N.clubId).in('profile_id', others.data.map(function (o) { return o.profile_id; }));
+        .eq('club_id', club.id).in('profile_id', others.data.map(function (o) { return o.profile_id; }));
       if (cards.error) return [];
       var names = cards.data
         .filter(function (c) { return c.listed && c.profiles; })
@@ -237,8 +239,11 @@
   async function load(access) {
     var mine = access.profile;
     var param = new URLSearchParams(window.location.search).get('profile');
-    state.isAdmin = access.role === 'admin';
     state.editingOther = !!param && !(mine && mine.id === param);
+    // the club whose card is edited: this site's, or ?club= (any of your clubs for your own card;
+    // only clubs you administer for someone else's)
+    club = N.pickClub(access, state.editingOther);
+    state.isAdmin = club.role === 'admin';
 
     if (state.editingOther && !state.isAdmin) { N.showState('not-admin'); return; }
     if (param && !UUID_RE.test(param)) { N.showState('not-found'); return; }
@@ -249,14 +254,14 @@
     if (result.error) throw result.error;
     if (!result.data) { N.showState('not-found'); return; }
     var cardResult = await client.from('club_profiles').select(CARD_FIELDS)
-      .eq('club_id', N.clubId).eq('profile_id', targetId).maybeSingle();
+      .eq('club_id', club.id).eq('profile_id', targetId).maybeSingle();
     if (cardResult.error) throw cardResult.error;
     if (!cardResult.data) { N.showState(state.editingOther ? 'not-found' : 'no-card'); return; }
     var profile = state.profile = Object.assign({}, result.data, cardResult.data);
 
     if (state.editingOther) {
       var allow = await client.from('club_access').select('email')
-        .eq('club_id', N.clubId).eq('email', profile.email).maybeSingle();
+        .eq('club_id', club.id).eq('email', profile.email).maybeSingle();
       state.hasAccess = !allow.error && !!allow.data;
     }
 
@@ -294,7 +299,7 @@
       document.getElementById('profile-intro').textContent = notes.join(' ');
       var back = document.getElementById('back-link');
       back.textContent = 'Back to admin';
-      back.setAttribute('href', 'admin.html');
+      back.setAttribute('href', N.withClub('admin.html', club));
       document.getElementById('show-email-text').textContent = 'Show email to other members';
       document.getElementById('show-phone-text').textContent = 'Show phone number to other members';
       if (new URLSearchParams(window.location.search).get('new') === '1') {
@@ -304,6 +309,11 @@
       showStatus('Welcome! Check your profile and press "Save profile". Email and phone stay hidden unless you tick the boxes.');
     }
 
+    if (!state.editingOther) document.getElementById('back-link').setAttribute('href', N.withClub('directory.html', club));
+    if (!club.isHome && !state.editingOther) {
+      var intro = document.getElementById('profile-intro');
+      intro.textContent = 'Your card in ' + club.name + '. ' + intro.textContent;
+    }
     N.showState('ready');
     updatePreview();
   }

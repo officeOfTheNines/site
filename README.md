@@ -84,6 +84,13 @@ One Supabase project serves several clubs: **The Nines** (club 1, site.thenines.
   table, or tick **No directory card** when adding someone.
 - **"Foreign member"** (admins only, per club) marks people who have moved abroad. They keep access and
   appear with a "Foreign member" label. When the site starts sending club emails, they will be left out.
+- **Club pickers** (only for people in more than one club; everyone else sees no change):
+  - **Directory:** a "Club" dropdown next to the heading, defaulting to the site's own club.
+  - **Map:** the top bar's "Map" becomes a small menu with each club's map (both public, new tab).
+  - **Admin page:** a club dropdown for people who administer more than one club (super admins), plus
+    the read-only list of super admins.
+  - The chosen club travels in the address (`?club=2`), so a reload or a link keeps it, and "Edit my
+    profile" or "Edit" open the card in that club. Each site still opens on its own club.
 - **Super admins** (`jbsolanet@gmail.com`) are admins of every club. Each club also has its own admins in
   `club_access`. A club must always keep at least one admin of its own.
 
@@ -339,6 +346,15 @@ Chromium with a fake Supabase server. Neither replaces a test against the real p
   no club.** Ran: locally (both cases, plus "not yourself" and "never the club's last admin") and in
   Chromium (the confirmation dialog, photo removed first when the profile goes). To do: live.
 - [ ] **Remove access still keeps the card as "Former member".** Ran: locally. To do: live.
+
+#### Club pickers
+
+- [ ] **People in one club see no picker and a plain Map link; people in several clubs get the Directory
+  club dropdown, the Map menu with each club's map, and (as admins of several clubs) the Admin club
+  dropdown and super-admin list. The choice is kept in the address and followed by profile edits.** Ran:
+  in Chromium with a fake server (switching to Les Ronds shows its empty directory, admin actions go to
+  club 2, phone layout and touch targets). To do: live; a super admin can try it now, before Les Ronds has
+  members.
 
 #### Seeing the directory as a particular member (SQL editor)
 
