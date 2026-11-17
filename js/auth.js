@@ -137,7 +137,9 @@
     window.location.replace(url.href);
   }
 
-  var clubId = cfg.CLUB_ID;
+  // This copy of the site's club (js/club.js): id, name, language.
+  var siteClub = window.NINES_CLUB || { CLUB_ID: 1, NAME: 'The Nines', LANG: 'en' };
+  var clubId = siteClub.CLUB_ID;
 
   // Works out who the visitor is and what they may see in THIS site's club.
   // Returns { session, role, profile, card } where role is 'admin', 'member' or null,
@@ -240,7 +242,7 @@
   // are the clubs offered in the picker (shown only when there is more than one).
   function pickClub(access, adminOnly) {
     var choices = (access.clubs || []).filter(function (c) { return !adminOnly || c.role === 'admin'; });
-    var home = { club_id: clubId, name: cfg.CLUB_NAME, role: access.role };
+    var home = { club_id: clubId, name: siteClub.NAME, role: access.role };
     if (!choices.some(function (c) { return c.club_id === clubId; })) choices.unshift(home);
     var wanted = Number(new URLSearchParams(window.location.search).get('club'));
     var chosen = choices.find(function (c) { return c.club_id === wanted; }) ||
@@ -254,6 +256,21 @@
     return href + (href.indexOf('?') === -1 ? '?' : '&') + 'club=' + encodeURIComponent(club.id);
   }
 
+  // Where the club picker goes for a club: the same page in that club's own copy of the site
+  // (clubs.site_url, for example https://site.thenines.club/lesronds/), so its language and logo
+  // follow. Without a site address, this page with ?club=<id>.
+  function clubPageUrl(target) {
+    var here = window.location.pathname;
+    var page = here.indexOf(siteRoot.pathname) === 0 ? here.slice(siteRoot.pathname.length) : 'members/index.html';
+    if (target && target.club_id !== clubId && target.site_url && /^https:\/\//.test(target.site_url)) {
+      return new URL(page, target.site_url.replace(/\/?$/, '/')).href;
+    }
+    var url = new URL(window.location.href);
+    if (!target || target.club_id === clubId) url.searchParams.delete('club');
+    else url.searchParams.set('club', target.club_id);
+    return url.href;
+  }
+
   // "Club: [The Nines ▾]" in the given container, only for people with more than one club to choose.
   // Changing it reloads the page for that club.
   function renderClubPicker(container, club) {
@@ -265,10 +282,7 @@
       select.appendChild(option);
     });
     select.addEventListener('change', function () {
-      var url = new URL(window.location.href);
-      if (Number(select.value) === clubId) url.searchParams.delete('club');
-      else url.searchParams.set('club', select.value);
-      window.location.assign(url.href);
+      window.location.assign(clubPageUrl(club.choices.find(function (c) { return String(c.club_id) === select.value; })));
     });
     container.replaceChildren(el('label', { for: 'club-picker-select', text: 'Club' }), select);
     container.hidden = false;
@@ -277,7 +291,8 @@
   window.Nines = {
     client: client,
     clubId: clubId,
-    clubName: cfg.CLUB_NAME,
+    clubName: siteClub.NAME,
+    lang: siteClub.LANG === 'fr' ? 'fr' : 'en',
     urlParams: urlParams,
     siteUrl: siteUrl,
     el: el,
@@ -290,6 +305,7 @@
     pickClub: pickClub,
     withClub: withClub,
     renderClubPicker: renderClubPicker,
+    clubPageUrl: clubPageUrl,
     guardMembersPage: guardMembersPage
   };
 })();

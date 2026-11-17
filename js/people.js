@@ -70,13 +70,13 @@
     }
 
     var details = el('div', { className: 'card-body' }, [
-      el(opts.headingTag || 'h2', { className: 'card-name', text: name })
+      el(opts.headingTag || 'h2', { className: 'card-name', 'data-no-i18n': true, text: name })
     ]);
     var labels = [];
     if (person.former_member) labels.push(el('span', { className: 'card-label', text: 'Former member' }));
     if (person.foreign_member) labels.push(el('span', { className: 'card-label', text: 'Foreign member' }));
     if (labels.length) details.appendChild(el('p', { className: 'card-labels' }, labels));
-    if (person.bio) details.appendChild(el('p', { className: 'card-bio', text: person.bio }));
+    if (person.bio) details.appendChild(el('p', { className: 'card-bio', 'data-no-i18n': true, text: person.bio }));
     if (person.co_brigadiers && person.co_brigadiers.length) {
       details.appendChild(el('p', { className: 'card-brigadiers' }, [
         el('span', { className: 'muted', text: (person.co_brigadiers.length === 1 ? 'Co-brigadier: ' : 'Co-brigadiers: ') }),

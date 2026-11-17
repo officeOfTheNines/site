@@ -5,3 +5,6 @@ private/
 *.csv
 *.numbers
 import*.sql
+
+# Built website (scripts/build-site.sh); published by GitHub, never committed.
+_site/
