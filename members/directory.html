@@ -48,7 +48,10 @@
     <div data-state="ready" hidden>
       <div class="page-head">
         <h1>Directory</h1>
-        <a class="button secondary" href="profile.html">Edit my profile</a>
+        <div class="page-head-actions">
+          <div id="club-picker" class="club-picker" hidden></div>
+          <a class="button secondary" id="edit-profile-link" href="profile.html">Edit my profile</a>
+        </div>
       </div>
 
       <div class="field search-field">
@@ -65,7 +68,7 @@
       <p id="directory-empty" class="panel" hidden>No members are listed yet.</p>
       <p id="no-matches" class="panel" hidden>No members match that name.</p>
       <div id="directory-list" class="card-grid"></div>
-      <p class="muted small">Photos are private to members. Email and phone appear only for members who chose to show them.</p>
+      <p class="muted small">Photos are private to members. Email and phone appear only for members who chose to show them; the club's admins see them all.</p>
     </div>
   </main>
 

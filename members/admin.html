@@ -52,9 +52,19 @@
     </section>
 
     <div data-state="ready" hidden>
-      <h1>Members</h1>
+      <div class="page-head">
+        <h1>Members of <span data-slot="club-name">the club</span></h1>
+        <div id="club-picker" class="club-picker" hidden></div>
+      </div>
       <p class="muted">Signed in as <span data-slot="email"></span>. Access (who can sign in) and directory cards
-        (what members see) are managed separately below.</p>
+        (what members see) are managed separately below, for this club only.</p>
+
+      <section id="super-admins" class="panel" hidden aria-labelledby="super-admins-heading">
+        <h2 id="super-admins-heading">Super admins</h2>
+        <p class="muted">Admins of every club. Only you and other super admins see this list; it is changed in
+          the Supabase SQL editor (see the README).</p>
+        <ul id="super-admins-list" class="link-list"></ul>
+      </section>
 
       <div id="admin-error" class="message error" role="alert"></div>
       <div id="admin-status" class="message success" role="status" aria-live="polite"></div>

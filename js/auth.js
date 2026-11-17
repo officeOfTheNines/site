@@ -178,7 +178,11 @@
       card = c.data;
     }
 
-    return { session: session, role: role, profile: me.data, card: card };
+    // Every club the person can open, with their role in each (for the club pickers).
+    var clubs = await client.rpc('my_clubs');
+    if (clubs.error) throw clubs.error;
+
+    return { session: session, role: role, profile: me.data, card: card, clubs: clubs.data || [] };
   }
 
   // Used by every page under members/. Shows "loading" until the check is done, then:
@@ -227,7 +231,47 @@
     document.querySelectorAll('[data-admin-only]').forEach(function (node) {
       node.hidden = access.role !== 'admin';
     });
+    if (window.NinesNav) window.NinesNav.setClubs(access.clubs);
     return access;
+  }
+
+  // The club a page shows: ?club=<id> when the person may open that club (as an admin, when
+  // adminOnly), otherwise this site's own club. Returns { id, name, role, choices }, where choices
+  // are the clubs offered in the picker (shown only when there is more than one).
+  function pickClub(access, adminOnly) {
+    var choices = (access.clubs || []).filter(function (c) { return !adminOnly || c.role === 'admin'; });
+    var home = { club_id: clubId, name: cfg.CLUB_NAME, role: access.role };
+    if (!choices.some(function (c) { return c.club_id === clubId; })) choices.unshift(home);
+    var wanted = Number(new URLSearchParams(window.location.search).get('club'));
+    var chosen = choices.find(function (c) { return c.club_id === wanted; }) ||
+      choices.find(function (c) { return c.club_id === clubId; }) || home;
+    return { id: chosen.club_id, name: chosen.name, role: chosen.role, isHome: chosen.club_id === clubId, choices: choices };
+  }
+
+  // Adds "?club=<id>" to a link when the club is not this site's own (keeps the choice across pages).
+  function withClub(href, club) {
+    if (!club || club.isHome) return href;
+    return href + (href.indexOf('?') === -1 ? '?' : '&') + 'club=' + encodeURIComponent(club.id);
+  }
+
+  // "Club: [The Nines ▾]" in the given container, only for people with more than one club to choose.
+  // Changing it reloads the page for that club.
+  function renderClubPicker(container, club) {
+    if (!container || club.choices.length < 2) return;
+    var select = el('select', { id: 'club-picker-select' });
+    club.choices.forEach(function (c) {
+      var option = el('option', { value: String(c.club_id), text: c.name });
+      if (c.club_id === club.id) option.selected = true;
+      select.appendChild(option);
+    });
+    select.addEventListener('change', function () {
+      var url = new URL(window.location.href);
+      if (Number(select.value) === clubId) url.searchParams.delete('club');
+      else url.searchParams.set('club', select.value);
+      window.location.assign(url.href);
+    });
+    container.replaceChildren(el('label', { for: 'club-picker-select', text: 'Club' }), select);
+    container.hidden = false;
   }
 
   window.Nines = {
@@ -243,6 +287,9 @@
     signOut: signOut,
     bindSignOutButtons: bindSignOutButtons,
     loadAccess: loadAccess,
+    pickClub: pickClub,
+    withClub: withClub,
+    renderClubPicker: renderClubPicker,
     guardMembersPage: guardMembersPage
   };
 })();

@@ -432,6 +432,7 @@ legend { padding: 0; }
   margin-bottom: 8px;
 }
 .page-head h1 { margin: 0; }
+.page-head-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 
 .search-field { max-width: 420px; margin-top: 16px; }
 input[type="search"], input[type="tel"], textarea {
@@ -597,6 +598,33 @@ fieldset.field legend { font-weight: 500; margin-bottom: 8px; }
 .group-form .form-end { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .group-form .form-title { grid-column: 1 / -1; margin: 0; font-family: var(--font-body); font-size: 1.05rem; font-weight: 600; }
 @media (max-width: 720px) { .group-form { grid-template-columns: 1fr; } }
+
+/* Map menu in the top bar (people in several clubs) */
+.nav-menu .has-submenu { position: relative; }
+.nav-caret { margin-left: 6px; font-size: 0.8em; }
+.nav-submenu {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  min-width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.nav-submenu .nav-link { width: 100%; white-space: nowrap; }
+@media (max-width: 720px) {
+  .nav-submenu { position: static; box-shadow: none; border: 0; padding: 0 0 0 16px; min-width: 0; }
+}
+
+/* Club picker (people in several clubs) */
+.club-picker { display: flex; align-items: center; gap: 10px; }
+.club-picker label { font-weight: 500; color: var(--muted); }
+.club-picker select { width: auto; min-width: 160px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
