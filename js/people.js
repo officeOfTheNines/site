@@ -11,8 +11,14 @@
   var MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
   var PHOTO_SIZE = 400;
 
+  // Main photo, shown in every club unless a club has its own.
   function photoPathFor(profileId) {
     return profileId + '/avatar.jpg';
+  }
+
+  // A club's own photo for this person (club_profiles.override_photo_path), set by the office.
+  function clubPhotoPathFor(profileId, clubId) {
+    return profileId + '/club-' + clubId + '.jpg';
   }
 
   function initials(name) {
@@ -167,14 +173,21 @@
     if (result.error) throw result.error;
   }
 
+  async function removeClubPhoto(profileId, clubId) {
+    var result = await N.client.storage.from(BUCKET).remove([clubPhotoPathFor(profileId, clubId)]);
+    if (result.error) throw result.error;
+  }
+
   window.NinesPeople = {
     initials: initials,
     joinNames: joinNames,
     photoPathFor: photoPathFor,
+    clubPhotoPathFor: clubPhotoPathFor,
     signedPhotoUrls: signedPhotoUrls,
     renderCard: renderCard,
     processPhoto: processPhoto,
     uploadPhoto: uploadPhoto,
-    removePhoto: removePhoto
+    removePhoto: removePhoto,
+    removeClubPhoto: removeClubPhoto
   };
 })();

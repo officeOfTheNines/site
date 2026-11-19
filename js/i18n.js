@@ -118,6 +118,7 @@
     'Headshot': 'Photo',
     'Choose a photo': 'Choisir une photo',
     'Remove photo': 'Retirer la photo',
+    'This club shows a photo of its own. A new photo replaces your main photo, used in your other clubs, and this one.': 'Ce club affiche une photo qui lui est propre. Une nouvelle photo remplace votre photo principale, utilisée dans vos autres clubs, ainsi que celle-ci.',
     'JPEG, PNG or similar, up to 5 MB. It is cropped to a square and resized before upload, and camera details such as location are removed.': 'JPEG, PNG ou similaire, jusqu’à 5 Mo. Elle est recadrée en carré et réduite avant l’envoi ; les données de l’appareil, comme la localisation, sont supprimées.',
     'What other members can see': 'Ce que les autres membres peuvent voir',
     'Show my email to other members': 'Afficher mon e-mail aux autres membres',
