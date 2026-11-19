@@ -199,6 +199,29 @@ Either way, the member confirms the spot by dragging the pin on a small map.
 5. Show "Powered by Google" next to the search results, as Google's terms require, and follow their rules
    on displaying Google results on a non-Google map.
 
+### A different photo per club (step 8)
+
+Everyone has a **main photo** (`profiles.photo_path`), shown in all their clubs. A person's card in one
+club can also have **its own photo** (`club_profiles.override_photo_path`, file
+`<profile id>/club-<club id>.jpg`), shown in that club's directory instead. When it is empty, the main
+photo shows. For example, Arnaud's main photo shows at The Nines, and Les Ronds can show a different one.
+
+- **Changing a photo on the profile page** (or pressing "Remove photo") from club X changes the main photo
+  and club X's photo: club X's own photo is cleared, so the new main photo shows there. Other clubs that
+  have their own photo keep it. When a club shows its own photo, the profile page says so under the photo.
+- **Club photos are set by the office**, in bulk: upload the file to the `headshots` bucket as
+  `<profile id>/club-<club id>.jpg` (Supabase dashboard, **Storage → headshots**, in the person's folder),
+  then in the SQL editor:
+
+  ```sql
+  update public.club_profiles
+  set override_photo_path = profile_id::text || '/club-' || club_id::text || '.jpg'
+  where club_id = 2 and profile_id = (select id from public.profiles where email = 'person@example.com');
+  ```
+
+  The database only accepts that exact file name for that card.
+- "Remove from club" deletes the person's photo for that club too.
+
 ### Directory privacy
 
 - Members only see a club's directory through the database function `directory(club)`, and only for
@@ -208,8 +231,9 @@ Either way, the member confirms the spot by dragging the pin on a small map.
 - Ordinary members can read only their **own** rows in `members`, `profiles` and `club_profiles`, so
   they cannot look up other people's email or phone directly. Club admins read and edit their club's
   people; super admins everyone.
-- Headshots are in a **private** storage bucket called `headshots`, one file per person at
-  `<profile id>/avatar.jpg`, shared by all their clubs. Signed-in members can view headshots; only the
+- Headshots are in a **private** storage bucket called `headshots`. Each person has one main photo at
+  `<profile id>/avatar.jpg`, shared by all their clubs. A club can also show **its own photo** of someone
+  (see "A different photo per club" below). Signed-in members can view headshots; only the
   person, or an admin of one of their clubs, can upload, replace or delete theirs. The site shows photos
   through signed links that stop working after one hour.
 - Photos are cropped to a square, resized to 400 × 400 and saved as JPEG in the browser before upload,
@@ -231,6 +255,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
 | `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
 | `migrations/005_multi_club.sql` | Step 5: several clubs. Adds `clubs`, `club_access` (replacing `allowed_emails`; every existing row moves to club 1), `super_admins` and `club_profiles` (each card's bio and settings move there, club 1), puts brigadier groups in club 1, and makes every rule and function per club. Runs as one transaction: if anything fails, nothing changes. |
@@ -491,6 +516,18 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
 - [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
+#### Step 8: a different photo per club
+
+Ran: on a local copy of the database with both clubs' members (directory per club, file-name rules,
+storage rights, clearing), and the profile page in Chromium with a fake server. To do: live, with Arnaud's
+cards after the bulk photo load.
+
+- [ ] **With a club photo set for Les Ronds, Les Ronds' directory shows it and The Nines' shows the main
+  photo.**
+- [ ] **On Les Ronds' profile page, the club photo shows with the note under it. Saving a new photo there
+  changes the photo in both clubs, and the note goes away.**
+- [ ] **Saving a new photo from The Nines leaves Les Ronds' own photo as it is.**
 
 #### Seeing the directory as a particular member (SQL editor)
 

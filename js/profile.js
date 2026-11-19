@@ -18,7 +18,8 @@
   var PHONE_RE = /^[0-9+() .-]{5,30}$/;
   // Shared profile (same in every club) + this club's card (bio, visibility, admin settings).
   var PROFILE_FIELDS = 'id, email, member_id, display_name, phone, photo_path';
-  var CARD_FIELDS = 'bio, show_email, show_phone, listed, foreign_member, member_updated_on';
+  // override_photo_path = this club's own photo, shown here instead of the main one (null = main photo)
+  var CARD_FIELDS = 'bio, show_email, show_phone, listed, foreign_member, member_updated_on, override_photo_path';
 
   var form = document.getElementById('profile-form');
   var nameInput = document.getElementById('display-name');
@@ -112,7 +113,7 @@
 
   photoRemove.addEventListener('click', function () {
     clearPending();
-    state.removePhoto = !!(state.profile && state.profile.photo_path);
+    state.removePhoto = !!(state.profile && (state.profile.photo_path || state.profile.override_photo_path));
     showStatus(state.removePhoto ? 'Photo will be removed when you press "Save profile".' : '');
     updatePreview();
     photoInput.focus();
@@ -148,13 +149,20 @@
     showError('');
     try {
       var id = state.profile.id;
+      // A new photo (or "Remove photo") changes the main photo, shown in every club, and this club's
+      // photo: if this club had its own, it is cleared so the new main photo shows here too.
+      // Other clubs' own photos are left alone.
       var photoPath = state.profile.photo_path;
+      var clearClubPhoto = false;
       if (state.pendingBlob) {
         photoPath = await P.uploadPhoto(id, state.pendingBlob);
-      } else if (state.removePhoto && photoPath) {
-        await P.removePhoto(id);
+        clearClubPhoto = !!state.profile.override_photo_path;
+      } else if (state.removePhoto) {
+        if (photoPath) await P.removePhoto(id);
         photoPath = null;
+        clearClubPhoto = !!state.profile.override_photo_path;
       }
+      if (clearClubPhoto) await P.removeClubPhoto(id, club.id);
 
       // shared details: name, phone and photo appear in every club the person belongs to
       var shared = await client.from('profiles')
@@ -165,6 +173,7 @@
 
       // this club's card
       var cardRow = { bio: bio || null, show_email: showEmail.checked, show_phone: showPhone.checked };
+      if (clearClubPhoto) cardRow.override_photo_path = null;
       if (state.isAdmin) {
         cardRow.listed = listed.checked;
         cardRow.foreign_member = foreign.checked;
@@ -183,6 +192,7 @@
       }
       if (!photoPath) state.photoUrl = null;
       state.removePhoto = false;
+      if (clearClubPhoto) document.getElementById('club-photo-note').hidden = true;
       if (!state.editingOther) N.setText('[data-slot="name"]', name);
       showStatus(state.editingOther ? 'Profile saved.' : 'Your profile is saved.');
       updatePreview();
@@ -267,10 +277,13 @@
 
     state.coBrigadiers = await loadCoBrigadiers(profile.id, state.editingOther);
 
-    if (profile.photo_path) {
+    document.getElementById('club-photo-note').hidden = !profile.override_photo_path;
+    // the photo this club shows: its own if it has one, otherwise the main photo
+    var shownPath = profile.override_photo_path || profile.photo_path;
+    if (shownPath) {
       try {
-        var urls = await P.signedPhotoUrls([profile.photo_path]);
-        state.photoUrl = urls[profile.photo_path] || null;
+        var urls = await P.signedPhotoUrls([shownPath]);
+        state.photoUrl = urls[shownPath] || null;
       } catch (e) {
         state.photoUrl = null;
       }

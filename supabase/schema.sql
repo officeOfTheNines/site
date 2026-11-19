@@ -11,7 +11,8 @@
 --   super_admins    = people who manage every club
 --   members         = one login record per person who has signed in
 --   profiles        = one shared profile per person (name, phone, photo), used by all their clubs
---   club_profiles   = a person's card in one club (bio, listed, foreign member, show email/phone)
+--   club_profiles   = a person's card in one club (bio, listed, foreign member, show email/phone,
+--                     and optionally its own photo for that club, override_photo_path)
 --   brigadier_groups / brigadier_group_members = the teams that organise each club's dinners
 --   reco_places     = restaurants members recommend (Recos), shared across clubs
 --   reco_comments   = the recos themselves: author, club posted as, text, who can see it
@@ -95,8 +96,11 @@ create table if not exists public.club_profiles (
   member_updated_on  timestamptz,   -- last time the person saved this card themselves (null = prompt them)
   created_on         timestamptz not null default now(),
   updated_on         timestamptz not null default now(),
+  override_photo_path text,         -- this club's own photo (<profile id>/club-<club id>.jpg); null = main photo
   primary key (club_id, profile_id),
-  constraint club_profiles_bio_length check (bio is null or char_length(bio) <= 500)
+  constraint club_profiles_bio_length check (bio is null or char_length(bio) <= 500),
+  constraint club_profiles_override_photo_path check (override_photo_path is null
+    or override_photo_path = profile_id::text || '/club-' || club_id::text || '.jpg')
 );
 create index if not exists club_profiles_profile_idx on public.club_profiles (profile_id);
 
@@ -257,7 +261,8 @@ as $$
                  where p.id = p_profile and public.is_admin(a.club_id));
 $$;
 
--- '<profile id>/avatar.jpg' -> the profile id; anything else -> null (never an error).
+-- '<profile id>/avatar.jpg' (main photo) or '<profile id>/club-<n>.jpg' (a club's own photo)
+-- -> the profile id; anything else -> null (never an error).
 create or replace function public.profile_id_from_path(p_path text)
 returns uuid
 language sql
@@ -265,7 +270,7 @@ immutable
 set search_path = ''
 as $$
   select case
-    when p_path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/avatar\.jpg$'
+    when p_path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/(avatar|club-[0-9]{1,9})\.jpg$'
       then split_part(p_path, '/', 1)::uuid
   end;
 $$;
@@ -515,6 +520,7 @@ $$;
 
 -- A club's directory: listed cards only. Email and phone appear where the person chose to show
 -- them, and always for that club's admins. former_member = no access to this club any more.
+-- photo_path = the card's own photo for this club if it has one, otherwise the main photo.
 -- Returns nothing to people who are not members of the club.
 create or replace function public.directory(p_club integer)
 returns table (
@@ -537,7 +543,7 @@ as $$
     p.id,
     p.display_name,
     cp.bio,
-    p.photo_path,
+    coalesce(cp.override_photo_path, p.photo_path),
     case when cp.show_email or public.is_admin(p_club) then p.email end,
     case when cp.show_phone or public.is_admin(p_club) then p.phone end,
     not exists (select 1 from public.club_access a where a.club_id = p_club and a.email = p.email),
@@ -932,7 +938,7 @@ grant select on table public.clubs, public.club_access, public.super_admins, pub
   to authenticated;
 grant update (needs_profile)                                            on table public.club_access   to authenticated;
 grant update (display_name, phone, photo_path)                          on table public.profiles      to authenticated;
-grant update (bio, show_email, show_phone, listed, foreign_member)      on table public.club_profiles to authenticated;
+grant update (bio, show_email, show_phone, listed, foreign_member, override_photo_path) on table public.club_profiles to authenticated;
 
 -- every function: nothing for public or anon
 revoke execute on function public.current_confirmed_email()                         from public, anon, authenticated;
@@ -983,8 +989,9 @@ grant execute on function public.admin_save_brigadier_group(integer, integer, uu
 grant execute on function public.admin_delete_brigadier_group(integer, integer)    to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Headshots: a PRIVATE storage bucket, files at <profile id>/avatar.jpg (one photo per person,
--- shared by all their clubs). Shown through signed links that expire after an hour.
+-- Headshots: a PRIVATE storage bucket. Main photo at <profile id>/avatar.jpg (shared by all the
+-- person's clubs); optional club photos at <profile id>/club-<club id>.jpg, shown in that club instead.
+-- Shown through signed links that expire after an hour.
 -- ---------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

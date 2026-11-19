@@ -125,7 +125,7 @@
       .order('role', { ascending: true }).order('email', { ascending: true });
     if (a.error) throw a.error;
     var c = await client.from('club_profiles')
-      .select('listed, foreign_member, profiles(id, email, member_id, display_name, photo_path)')
+      .select('listed, foreign_member, override_photo_path, profiles(id, email, member_id, display_name, photo_path)')
       .eq('club_id', clubId);
     if (c.error) throw c.error;
     var m = await client.from('members').select('id, last_login');
@@ -151,6 +151,7 @@
       var p = row.profiles;
       return {
         id: p.id, email: p.email, member_id: p.member_id, display_name: p.display_name, photo_path: p.photo_path,
+        override_photo_path: row.override_photo_path,
         listed: row.listed, foreign_member: row.foreign_member,
         last_login: p.member_id ? lastLogin[p.member_id] : null
       };
@@ -453,6 +454,8 @@
 
     button.disabled = true;
     try {
+      // photos first: once the card is gone, the admin may no longer be allowed to delete them
+      if (card.override_photo_path) await P.removeClubPhoto(card.id, clubId);
       if (info.deletes_profile && info.photo_path) await P.removePhoto(card.id);
       var result = await client.rpc('admin_remove_from_club', { p_club: clubId, p_email: card.email, p_delete_small_groups: small.length > 0 });
       if (result.error) throw result.error;
