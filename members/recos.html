@@ -15,29 +15,27 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
   <link rel="stylesheet" href="../css/style.css">
 </head>
-<body aria-busy="true">
-  <a class="skip-link" href="#main">Skip to content</a>
-
-  <header class="site-header" data-nav="recos"></header>
+<body class="recos-page" aria-busy="true">
+  <a class="skip-link" href="#recos-search">Skip to the search</a>
 
   <main id="main">
     <noscript>
       <p class="message error">This page needs JavaScript.</p>
     </noscript>
 
-    <div data-state="loading" class="loading" role="status">
+    <div data-state="loading" class="loading recos-state" role="status">
       <span class="spinner" aria-hidden="true"></span>
       <span>Checking your membership…</span>
     </div>
 
-    <section data-state="denied" class="panel" hidden aria-labelledby="denied-heading">
+    <section data-state="denied" class="panel recos-state" hidden aria-labelledby="denied-heading">
       <h1 id="denied-heading">Not on the member list</h1>
       <p>Your email is not on the member list. Please contact the office.</p>
       <p class="muted">Signed in as <span data-slot="denied-email"></span></p>
       <button type="button" class="button" data-action="sign-out">Sign out</button>
     </section>
 
-    <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
+    <section data-state="error" class="panel recos-state" hidden aria-labelledby="error-heading">
       <h1 id="error-heading">Something went wrong</h1>
       <p class="message error" role="alert" data-slot="error-message"></p>
       <div class="actions">
@@ -46,19 +44,41 @@
       </div>
     </section>
 
-    <div data-state="ready" hidden>
-      <div class="page-head">
-        <h1>Recos</h1>
-        <button type="button" class="button" id="add-open">Add a reco</button>
+    <div data-state="ready" class="recos-app" hidden>
+      <h1 class="visually-hidden">Recos</h1>
+      <div id="recos-map" class="recos-map-full" role="application" aria-label="Map of recommended restaurants"></div>
+
+      <div class="recos-bar">
+        <a class="bar-button" id="recos-back" href="../" aria-label="Back to home"><span aria-hidden="true">←</span></a>
+        <div class="recos-search">
+          <label for="recos-search" class="visually-hidden">Search recos</label>
+          <input id="recos-search" type="search" placeholder="Search recos" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="recos-search-results">
+          <button type="button" class="search-clear" id="recos-search-clear" aria-label="Clear search" hidden><span aria-hidden="true">×</span></button>
+          <ul id="recos-search-results" class="recos-search-results" role="listbox" aria-label="Matching recos" hidden></ul>
+        </div>
+        <button type="button" class="bar-button bar-add" id="add-open" aria-label="Add a reco"><span aria-hidden="true">+</span></button>
       </div>
-      <p class="muted">Restaurants members recommend. Separate from the club's dinner map.</p>
 
-      <div id="recos-error" class="message error" role="alert"></div>
-      <div id="recos-status" class="message success" role="status" aria-live="polite"></div>
+      <div class="recos-messages">
+        <div id="recos-error" class="message error" role="alert"></div>
+        <div id="recos-status" class="message success" role="status" aria-live="polite"></div>
+      </div>
+      <p id="recos-count" class="visually-hidden" role="status" aria-live="polite"></p>
+      <p id="recos-empty" class="recos-float" hidden>No recos yet. Press + or long-press the map to add the first one.</p>
 
-      <section id="add-panel" class="panel" hidden aria-labelledby="add-heading">
-        <h2 id="add-heading">Add a reco</h2>
+      <div id="recos-tip" class="recos-float recos-tip" role="note" hidden>
+        <span id="recos-tip-text">Tip: long-press the map to add a reco.</span>
+        <button type="button" class="bar-button" id="recos-tip-close" aria-label="Dismiss tip"><span aria-hidden="true">×</span></button>
+      </div>
 
+      <section id="add-panel" class="recos-sheet" hidden aria-labelledby="add-heading">
+        <div class="sheet-head">
+          <h2 id="add-heading">Add a reco</h2>
+          <button type="button" class="bar-button sheet-close" id="add-close" aria-label="Close">×</button>
+        </div>
+
+        <div id="query-step">
         <div class="field">
           <label for="place-query">Find the restaurant</label>
           <input id="place-query" type="search" autocomplete="off" spellcheck="false" aria-describedby="place-query-hint">
@@ -66,11 +86,13 @@
         </div>
         <p id="search-status" class="muted small" role="status" aria-live="polite"></p>
         <ul id="search-results" class="search-results"></ul>
+        </div>
 
         <div id="place-step" hidden>
           <div class="field">
             <label for="place-name">Name</label>
-            <input id="place-name" type="text" maxlength="120" required>
+            <input id="place-name" type="text" maxlength="120" required aria-describedby="place-name-hint">
+            <p id="place-name-hint" class="hint" role="status" aria-live="polite"></p>
           </div>
           <div class="field">
             <label for="place-address">Address <span class="muted">(optional)</span></label>
@@ -101,6 +123,7 @@
             <p><strong>Already recommended</strong></p>
             <ul id="duplicate-comments" class="reco-lines"></ul>
             <p class="small">Your reco will be added to this restaurant.</p>
+            <button type="button" class="button link" id="duplicate-different" hidden>No, it is a different place</button>
           </div>
 
           <div class="actions">
@@ -109,15 +132,6 @@
           </div>
         </div>
       </section>
-
-      <div class="field search-field">
-        <label for="filter">Filter by name</label>
-        <input id="filter" type="search" autocomplete="off" spellcheck="false">
-      </div>
-      <div id="recos-map" class="recos-map" role="application" aria-label="Map of recommended restaurants"></div>
-      <p id="recos-count" class="muted" role="status" aria-live="polite"></p>
-      <p id="recos-empty" class="panel" hidden>No recos yet. Be the first to add one.</p>
-      <ul id="place-list" class="place-list"></ul>
     </div>
 
     <dialog id="edit-dialog" class="dialog" aria-labelledby="edit-title">
@@ -160,7 +174,6 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
   <script src="../js/config.js"></script>
-  <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/places-search.js"></script>

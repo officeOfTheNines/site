@@ -3,6 +3,8 @@
 //
 //   NinesPlaces.searchPlaces(query, near) -> Promise of [{ name, address, lat, lng, external_id }]
 //   NinesPlaces.parseMapLink(text)        -> { name, address, lat, lng, external_id } or null
+//   NinesPlaces.nearestPlace(lat, lng)    -> Promise of the nearest restaurant or named place
+//                                            { name, address, lat, lng, external_id, distance } or null
 //
 // Provider today: Photon (photon.komoot.io), a free search over OpenStreetMap data. Its fair-use terms
 // ask for no heavy or bulk use, so: searches only after the member stops typing (debounced by the
@@ -13,6 +15,8 @@
   'use strict';
 
   var PHOTON = 'https://photon.komoot.io/api/';
+  var PHOTON_REVERSE = 'https://photon.komoot.io/reverse';
+  var FOOD = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'biergarten', 'food_court', 'ice_cream'];
   var MIN_GAP_MS = 1000;
   var lastRequest = 0;
   var cache = {};
@@ -38,17 +42,9 @@
     };
   }
 
-  async function photon(query, near, foodOnly) {
-    var url = new URL(PHOTON);
-    url.searchParams.set('q', query);
-    url.searchParams.set('limit', '6');
-    var lang = document.documentElement.lang === 'fr' ? 'fr' : 'en';
-    url.searchParams.set('lang', lang);
-    if (near) { url.searchParams.set('lat', String(near.lat)); url.searchParams.set('lon', String(near.lng)); }
-    if (foodOnly) {
-      ['amenity:restaurant', 'amenity:cafe', 'amenity:bar', 'amenity:pub', 'amenity:fast_food', 'amenity:biergarten']
-        .forEach(function (tag) { url.searchParams.append('osm_tag', tag); });
-    }
+  // One request to Photon: cached, and never more than one per second.
+  async function fetchFeatures(url) {
+    url.searchParams.set('lang', document.documentElement.lang === 'fr' ? 'fr' : 'en');
     var key = url.href;
     if (cache[key]) return cache[key];
 
@@ -59,9 +55,53 @@
     var response = await fetch(key, { headers: { Accept: 'application/json' } });
     if (!response.ok) throw new Error('The place search is not available right now. Try again in a moment.');
     var data = await response.json();
-    var places = (data.features || []).map(toPlace).filter(Boolean);
-    cache[key] = places;
-    return places;
+    cache[key] = data.features || [];
+    return cache[key];
+  }
+
+  async function photon(query, near, foodOnly) {
+    var url = new URL(PHOTON);
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', '6');
+    if (near) { url.searchParams.set('lat', String(near.lat)); url.searchParams.set('lon', String(near.lng)); }
+    if (foodOnly) {
+      ['amenity:restaurant', 'amenity:cafe', 'amenity:bar', 'amenity:pub', 'amenity:fast_food', 'amenity:biergarten']
+        .forEach(function (tag) { url.searchParams.append('osm_tag', tag); });
+    }
+    return (await fetchFeatures(url)).map(toPlace).filter(Boolean);
+  }
+
+  function metres(lat1, lng1, lat2, lng2) {
+    var r = Math.PI / 180;
+    var a = Math.sin((lat2 - lat1) * r / 2) * Math.sin((lat2 - lat1) * r / 2) +
+            Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lng2 - lng1) * r / 2) * Math.sin((lng2 - lng1) * r / 2);
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // What is at this point of the map? The nearest restaurant, café or bar within about 80 m;
+  // otherwise the nearest named place (a shop, a building...) within about 40 m; otherwise null
+  // (an empty spot: the member types the name). Streets, districts and towns are never suggested.
+  async function nearestPlace(lat, lng) {
+    var url = new URL(PHOTON_REVERSE);
+    url.searchParams.set('lat', String(lat));
+    url.searchParams.set('lon', String(lng));
+    url.searchParams.set('radius', '0.1'); // km
+    url.searchParams.set('limit', '10');
+    var features = await fetchFeatures(url);
+    var ignore = /^(highway|place|boundary|railway|landuse|natural|waterway|route)$/;
+    var candidates = features.map(function (f) {
+      var place = toPlace(f);
+      if (!place) return null;
+      var props = f.properties || {};
+      if (ignore.test(props.osm_key || '') || /^(street|city|district|locality|county|state|country|postcode)$/.test(props.type || '')) return null;
+      place.distance = metres(lat, lng, place.lat, place.lng);
+      place.food = props.osm_key === 'amenity' && FOOD.indexOf(props.osm_value) !== -1;
+      return place;
+    }).filter(Boolean).sort(function (a, b) { return a.distance - b.distance; });
+    var best = candidates.find(function (p) { return p.food && p.distance <= 80; }) ||
+               candidates.find(function (p) { return p.distance <= 40; }) || null;
+    if (best) delete best.food;
+    return best;
   }
 
   // Restaurants, cafés and bars first; if none, any place with that name.
@@ -109,5 +149,5 @@
     return { name: name || '', address: null, lat: lat, lng: lng, external_id: null };
   }
 
-  window.NinesPlaces = { searchPlaces: searchPlaces, parseMapLink: parseMapLink };
+  window.NinesPlaces = { searchPlaces: searchPlaces, parseMapLink: parseMapLink, nearestPlace: nearestPlace };
 })();
