@@ -18,7 +18,7 @@ database password anywhere in this repo.
 | --- | --- |
 | `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member login". |
 | `login.html` | Sign in with Google, email and password (sign in, create account, forgot password), or an emailed sign-in link. |
-| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
+| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, **Recent activity** (recos and comments from your clubs, with the My clubs / All clubs toggle), **My activity**, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
 | `members/recos.html` | **Recos**: restaurants members recommend, on a full-screen map shared across clubs. Search by name, add a reco (+ or a long-press on the map), edit or delete your own. Separate from the club's dinner map. |
@@ -32,6 +32,7 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
 | `supabase/schema.sql` | The complete current schema for a new project (all clubs): tables, security rules, functions, the headshots storage bucket, the clubs and the first admins. |
@@ -185,6 +186,21 @@ unchanged.
   the finger or a second finger (pinch) cancels the press, so dragging and zooming still work.
 - A **tip** about long-press shows on the first visit until it is dismissed (remembered in the browser).
 
+#### Recent activity and the My clubs / All clubs toggle (step 9)
+
+- The member home shows **Recent activity**: new recos ("added") and new comments on existing ones
+  ("commented on"), newest first, 20 at a time with "Load more". Each card shows "First L., Club", the
+  restaurant, its postcode or area, the comment cut to about 140 characters and how long ago; tapping it
+  opens that reco on the map. Below it, **My activity** lists the member's own recos and comments.
+- Everything comes from the existing reco tables through `activity_feed(scope, limit, before)`, which runs
+  with the member's own rights (row-level security applies) and adds: never your own events; "Only me"
+  never shown to others; "My club" only to that club's members. **My clubs** = by members of your clubs;
+  **All clubs** = also "Everyone" recos by members of any club. Edits make no event; deleting removes it.
+- The same toggle filters the Recos map ("All clubs" shows every pin you can see, as before). The choice
+  is shared by both pages and remembered per member in the browser; it starts on "My clubs".
+- Stars, price level and photos are not stored yet: the feed returns them as empty, and each card keeps a
+  hidden thumbnail slot for later.
+
 #### Finding a restaurant
 
 The search box uses **Photon** (photon.komoot.io), a free search over **OpenStreetMap** data. To respect
@@ -269,6 +285,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/009_activity_feed.sql` | Step 9: the home page's activity feed. Adds `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. No tables, no data changes; existing Recos functions and permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
 | `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
@@ -530,6 +547,18 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
 - [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
+#### Step 9: activity feed and My clubs / All clubs
+
+Ran: every rule on a local copy of the database with both clubs' members (Nines-only, both clubs, Les Ronds
+admin, super admin), and the pages in Chromium with a fake server (desktop, phone, French). To do: live,
+after running `009_activity_feed.sql`.
+
+- [ ] **Your own recos never appear in Recent activity, but do in My activity.**
+- [ ] **An "Only me" reco never appears in anyone else's feed; a "My club" reco only for that club's members.**
+- [ ] **My clubs shows people from your clubs; All clubs adds "Everyone" recos from the other club.**
+- [ ] **The toggle on the home page and on the map stay in step; tapping a card opens that reco on the map.**
+- [ ] **Editing a comment does not bring it back to the top; deleting it removes it.**
 
 #### Recos page: full-screen map and long-press
 

@@ -772,6 +772,45 @@ body.recos-page main { max-width: none; padding: 0; }
   }
 }
 
+/* ---------- My clubs | All clubs (home feed and Recos map) ---------- */
+.scope-toggle {
+  display: inline-flex; padding: 3px; gap: 3px;
+  background: var(--page); border: 1px solid var(--border); border-radius: 999px;
+}
+.scope-option {
+  min-height: var(--touch); min-width: var(--touch); padding: 0 16px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted); font: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.scope-option:hover { color: var(--text); }
+.scope-option[aria-checked="true"] { background: var(--brass); color: var(--on-brass); font-weight: 600; }
+.scope-option:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.recos-scope {
+  position: fixed; z-index: 999; top: calc(72px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
+}
+@media (min-width: 760px) { .recos-scope { left: 50%; transform: translateX(-50%); } }
+.recos-scope .scope-toggle { background: rgba(11, 34, 23, 0.85); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); }
+.recos-page .recos-messages { top: calc(132px + env(safe-area-inset-top)); }
+
+/* ---------- Home sections: recent activity, my activity ---------- */
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.section-head h2 { margin: 0; }
+.activity-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+.activity-card {
+  display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; min-height: var(--touch);
+  background: var(--page); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); text-decoration: none;
+}
+.activity-card:hover { border-color: var(--brass); }
+.activity-card:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.activity-thumb { flex: 0 0 56px; width: 56px; height: 56px; border-radius: 8px; background: var(--panel) center / cover no-repeat; }
+.activity-body { min-width: 0; flex: 1; }
+.activity-line { margin: 0; overflow-wrap: anywhere; }
+.activity-author { font-weight: 600; }
+.activity-meta { margin: 2px 0 0; color: var(--muted); font-size: 0.9rem; display: flex; flex-wrap: wrap; gap: 0 6px; }
+.activity-meta > * + *::before { content: "·"; margin-right: 6px; }
+.activity-snippet { margin: 6px 0 0; color: var(--text); opacity: 0.9; overflow-wrap: anywhere; }
+.small-loading { padding: 8px 0; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
