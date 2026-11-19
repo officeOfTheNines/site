@@ -27,4 +27,10 @@ for dir in clubs/*/; do
   done
   echo "Built /$slug/"
 done
-echo "Site built in $OUT"
+# Cache busting: every local stylesheet and script address in the pages gets ?v=<this build's version>,
+# so phones and browsers fetch fresh files after each deploy instead of mixing a new page with an
+# old cached style.css or script (GitHub Pages lets browsers reuse files for a while).
+VERSION="$(git rev-parse --short HEAD 2>/dev/null || date +%s)"
+find "$OUT" -name '*.html' -print0 | xargs -0 sed -i -E \
+  "s#((href|src)=\"(\.\./)*(css|js)/[A-Za-z0-9_-]+\.(css|js))\"#\1?v=${VERSION}\"#g"
+echo "Site built in $OUT (version $VERSION)"
