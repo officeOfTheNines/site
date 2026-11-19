@@ -19,6 +19,13 @@
     me: 'Only me: nobody else can see it.'
   };
   var CENTRES = { 1: [51.5072, -0.1276], 2: [48.8566, 2.3522] }; // London, Paris
+  // Where the back arrow goes: this club's home page ('/' for The Nines, '/lesronds/' for Les Ronds).
+  // Change it here when the home page moves (club news, new recos, comments on recos).
+  var BACK_URL = '../';
+  var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there
+  var PRESS_SLOP_PX = 8;     // moving further than this cancels the press (it is a drag)
+  var NEARBY_M = 40;         // a long-press this close to a pin offers to add to that restaurant
+  var TIP_KEY = 'nines.recos.longPressTipDismissed';
   // CARTO basemap key, the same one the dinner map uses. It is a browser key, so it is public by design;
   // the domains allowed to use it are set in the CARTO dashboard.
   var TILES = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_4qad_1_15e6672081357063faf80bbe';
@@ -28,10 +35,12 @@
 
   var errorBox = document.getElementById('recos-error');
   var statusBox = document.getElementById('recos-status');
-  var filterInput = document.getElementById('filter');
   var countNode = document.getElementById('recos-count');
   var emptyNode = document.getElementById('recos-empty');
-  var listNode = document.getElementById('place-list');
+  var searchInput = document.getElementById('recos-search');
+  var searchClear = document.getElementById('recos-search-clear');
+  var searchList = document.getElementById('recos-search-results');
+  var tipNode = document.getElementById('recos-tip');
 
   var addOpen = document.getElementById('add-open');
   var addPanel = document.getElementById('add-panel');
@@ -39,6 +48,7 @@
   var searchStatus = document.getElementById('search-status');
   var resultsNode = document.getElementById('search-results');
   var placeStep = document.getElementById('place-step');
+  var queryStep = document.getElementById('query-step');
   var nameInput = document.getElementById('place-name');
   var addressInput = document.getElementById('place-address');
   var bodyInput = document.getElementById('reco-body');
@@ -51,6 +61,9 @@
   var duplicateComments = document.getElementById('duplicate-comments');
   var submitButton = document.getElementById('reco-submit');
   var cancelButton = document.getElementById('add-cancel');
+  var closeButton = document.getElementById('add-close');
+  var nameHint = document.getElementById('place-name-hint');
+  var differentButton = document.getElementById('duplicate-different');
 
   var editDialog = document.getElementById('edit-dialog');
   var editBody = document.getElementById('edit-body');
@@ -66,9 +79,17 @@
   var chosen = null;      // the place being added: { name, address, lat, lng, external_id }
   var duplicate = null;   // a visible matching place, when found
   var homeClub = null;
+  var canAdd = false;     // members with a profile; office accounts cannot post
+  var pressMarker = null; // temporary marker where a long-press happened
 
-  function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
-  function showStatus(text) { errorBox.textContent = ''; statusBox.textContent = text || ''; }
+  var statusTimer = null;
+  function showError(text) { clearTimeout(statusTimer); statusBox.textContent = ''; errorBox.textContent = text || ''; }
+  function showStatus(text) {
+    errorBox.textContent = '';
+    statusBox.textContent = text || '';
+    clearTimeout(statusTimer);
+    if (text) statusTimer = setTimeout(function () { statusBox.textContent = ''; }, 5000);
+  }
 
   function fold(text) {
     return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -165,7 +186,8 @@
     markers = {};
     places.forEach(function (place) {
       var marker = L.marker([place.lat, place.lng], { icon: pinIcon(), title: place.name, alt: place.name, keyboard: true });
-      marker.bindPopup(function () { return popupContent(place); }, { maxWidth: 320, autoPanPadding: [24, 24] });
+      // keep the open card clear of the top bar
+      marker.bindPopup(function () { return popupContent(place); }, { maxWidth: 320, autoPanPaddingTopLeft: [16, 88], autoPanPaddingBottomRight: [16, 40] });
       markers[place.id] = marker;
     });
     applyFilter();
@@ -174,37 +196,124 @@
     }
   }
 
+  // ---- Search (top bar) ----
+  // Only the recos this member may see are ever loaded (reco_feed applies the Everyone / My club /
+  // Only me rules), so the search cannot find anything else. Matching ignores case and accents.
+  // Each word must match. A word starting with # will match a tag once recos have tags
+  // (place.tags, not stored yet); today such a word matches nothing.
+  function matches(place, query) {
+    var words = fold(query).split(/\s+/).filter(Boolean);
+    var name = fold(place.name);
+    return words.every(function (w) {
+      if (w.charAt(0) === '#') return (place.tags || []).some(function (t) { return fold(t) === w.slice(1); });
+      return name.indexOf(w) !== -1;
+    });
+  }
+
+  function shownPlaces() {
+    var q = searchInput.value.trim();
+    return q ? places.filter(function (p) { return matches(p, q); }) : places;
+  }
+
+  // Pins: only the matching recos while a search is typed.
   function applyFilter() {
-    var q = fold(filterInput.value.trim());
-    var shown = places.filter(function (p) { return !q || fold(p.name).indexOf(q) !== -1; });
+    var q = searchInput.value.trim();
+    var shown = shownPlaces();
     places.forEach(function (p) {
       var on = shown.indexOf(p) !== -1;
       if (on && !map.hasLayer(markers[p.id])) markers[p.id].addTo(map);
       if (!on && map.hasLayer(markers[p.id])) markers[p.id].remove();
     });
-
-    listNode.replaceChildren();
-    shown.forEach(function (p) {
-      var button = el('button', { type: 'button', className: 'place-link' }, [
-        el('span', { className: 'place-link-name', 'data-no-i18n': true, text: p.name }),
-        el('span', { className: 'muted small', text: p.comments.length === 1 ? '1 reco' : p.comments.length + ' recos' })
-      ]);
-      button.addEventListener('click', function () { openPlace(p.id); });
-      listNode.appendChild(el('li', null, [button]));
-    });
+    searchClear.hidden = !searchInput.value;
     emptyNode.hidden = places.length > 0;
     countNode.textContent = q
       ? (shown.length === 1 ? '1 restaurant matches' : shown.length + ' restaurants match')
       : (places.length === 1 ? '1 restaurant' : places.length + ' restaurants');
   }
 
+  var activeOption = -1;
+  function closeResults() {
+    searchList.hidden = true;
+    searchList.replaceChildren();
+    searchInput.setAttribute('aria-expanded', 'false');
+    searchInput.removeAttribute('aria-activedescendant');
+    activeOption = -1;
+  }
+
+  // The short list under the field: best matches first (names starting with the search).
+  function showResults() {
+    var q = fold(searchInput.value.trim());
+    searchList.replaceChildren();
+    activeOption = -1;
+    searchInput.removeAttribute('aria-activedescendant');
+    if (!q) { closeResults(); return; }
+    var found = shownPlaces().slice().sort(function (a, b) {
+      var sa = fold(a.name).indexOf(q) === 0 ? 0 : 1, sb = fold(b.name).indexOf(q) === 0 ? 0 : 1;
+      return sa - sb || collator.compare(a.name, b.name);
+    }).slice(0, 8);
+    if (!found.length) {
+      searchList.appendChild(el('li', { className: 'recos-search-none', text: 'No recos match.' }));
+    }
+    found.forEach(function (p, i) {
+      var li = el('li', { id: 'recos-option-' + i, role: 'option', className: 'recos-option', 'aria-selected': 'false' }, [
+        el('span', { className: 'recos-option-name', 'data-no-i18n': true, text: p.name }),
+        el('span', { className: 'muted small', text: p.comments.length === 1 ? '1 reco' : p.comments.length + ' recos' })
+      ]);
+      li.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep focus in the field
+      li.addEventListener('click', function () { pickResult(p); });
+      li._place = p;
+      searchList.appendChild(li);
+    });
+    searchList.hidden = false;
+    searchInput.setAttribute('aria-expanded', 'true');
+  }
+
+  function highlight(index) {
+    var options = searchList.querySelectorAll('[role="option"]');
+    if (!options.length) return;
+    activeOption = (index + options.length) % options.length;
+    options.forEach(function (o, i) { o.setAttribute('aria-selected', i === activeOption ? 'true' : 'false'); });
+    searchInput.setAttribute('aria-activedescendant', options[activeOption].id);
+    options[activeOption].scrollIntoView({ block: 'nearest' });
+  }
+
+  function pickResult(place) {
+    searchInput.value = place.name;
+    applyFilter();
+    closeResults();
+    openPlace(place.id);
+  }
+
+  function clearSearch() {
+    searchInput.value = '';
+    applyFilter();
+    closeResults();
+    searchInput.focus();
+  }
+
+  searchInput.addEventListener('input', function () { applyFilter(); showResults(); });
+  searchInput.addEventListener('focus', function () { if (searchInput.value.trim()) showResults(); });
+  searchInput.addEventListener('blur', function () { setTimeout(closeResults, 150); });
+  searchInput.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (searchList.hidden) showResults(); highlight(activeOption + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(activeOption - 1); }
+    else if (e.key === 'Enter') {
+      var options = searchList.querySelectorAll('[role="option"]');
+      var pick = options[activeOption >= 0 ? activeOption : 0];
+      if (pick) { e.preventDefault(); pickResult(pick._place); }
+    } else if (e.key === 'Escape') {
+      if (!searchList.hidden) closeResults(); else if (searchInput.value) clearSearch();
+    }
+  });
+  searchClear.addEventListener('click', clearSearch);
+
   function openPlace(id) {
     var marker = markers[id];
     if (!marker) return;
-    if (!map.hasLayer(marker)) { filterInput.value = ''; applyFilter(); }
-    map.setView(marker.getLatLng(), Math.max(map.getZoom(), 15));
+    if (!map.hasLayer(marker)) { searchInput.value = ''; applyFilter(); }
+    // jump (no animation) so the card can then pan itself clear of the top bar
+    map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
     marker.openPopup();
-    document.getElementById('recos-map').scrollIntoView({ block: 'nearest' });
   }
 
   async function refresh(openId) {
@@ -260,6 +369,10 @@
   function updateCount() { bodyCount.textContent = bodyInput.value.length + ' of 300 characters'; }
 
   function resetAdd() {
+    removePressMarker();
+    queryStep.hidden = false;
+    nameHint.textContent = '';
+    nameInput.placeholder = '';
     queryInput.value = '';
     resultsNode.replaceChildren();
     searchStatus.textContent = '';
@@ -274,19 +387,28 @@
     updateCount();
   }
 
-  addOpen.addEventListener('click', function () {
+  // The add flow opens from the + button or from a long-press on the map.
+  function openAdd() {
+    map.closePopup();
+    closeResults();
     addPanel.hidden = false;
-    addOpen.hidden = true;
     resetAdd();
+  }
+  function closeAdd() {
+    addPanel.hidden = true;
+    removePressMarker();
+    addOpen.focus();
+  }
+  addOpen.addEventListener('click', function () {
+    if (!canAdd) { showError('You need a member profile to add a reco.'); return; }
+    openAdd();
     queryInput.focus();
   });
-  cancelButton.addEventListener('click', function () {
-    addPanel.hidden = true;
-    addOpen.hidden = false;
-    addOpen.focus();
-  });
+  cancelButton.addEventListener('click', closeAdd);
+  closeButton.addEventListener('click', closeAdd);
+  addPanel.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAdd(); });
 
-  function choose(place) {
+  function choose(place, quiet) {
     chosen = { name: place.name || '', address: place.address || '', lat: place.lat, lng: place.lng, external_id: place.external_id || null };
     nameInput.value = chosen.name;
     addressInput.value = chosen.address;
@@ -304,6 +426,7 @@
         var ll = addMarker.getLatLng();
         chosen.lat = ll.lat;
         chosen.lng = ll.lng;
+        if (pressMarker) pressMarker.setLatLng(ll);
         clearDuplicate();
       });
     } else {
@@ -311,7 +434,149 @@
       addMap.setView(spot, 17);
     }
     setTimeout(function () { addMap.invalidateSize(); }, 50);
-    (chosen.name ? bodyInput : nameInput).focus();
+    if (!quiet) (chosen.name ? bodyInput : nameInput).focus();
+  }
+
+  // ---- Adding by long-press on the map ----
+
+  function removePressMarker() {
+    if (pressMarker) { pressMarker.remove(); pressMarker = null; }
+  }
+
+  function distanceM(lat1, lng1, lat2, lng2) {
+    var r = Math.PI / 180;
+    var a = Math.sin((lat2 - lat1) * r / 2) * Math.sin((lat2 - lat1) * r / 2) +
+            Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lng2 - lng1) * r / 2) * Math.sin((lng2 - lng1) * r / 2);
+    return 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function showDuplicate(place, offerDifferent) {
+    duplicate = { id: place.id, name: place.name, address: place.address, lat: place.lat, lng: place.lng };
+    var known = places.find(function (p) { return p.id === place.id; });
+    duplicateComments.replaceChildren();
+    ((known && known.comments) || []).forEach(function (c) { duplicateComments.appendChild(commentLine(c, false)); });
+    duplicateBox.hidden = false;
+    differentButton.hidden = !offerDifferent;
+    submitButton.textContent = 'Add my reco to it';
+  }
+
+  var pressSeq = 0;
+  var lastPressAt = 0;
+  // Opens the add flow at a point of the map: a temporary marker there, the nearest restaurant's
+  // name suggested (or an empty name to type), and, if the point is on or next to a reco the member
+  // can see, the offer to add to that restaurant instead.
+  async function addAt(latlng) {
+    if (!canAdd) return;
+    // a phone may send its own long-press event just after ours: ignore that repeat
+    if (!addPanel.hidden && Date.now() - lastPressAt < 900) return;
+    lastPressAt = Date.now();
+    dismissTip();
+    openAdd();
+    pressMarker = L.marker(latlng, { icon: L.divIcon({ className: 'reco-pin reco-pin-new', html: '<span></span>', iconSize: [26, 26], iconAnchor: [13, 13] }),
+      keyboard: false, interactive: false, alt: 'New reco location' }).addTo(map);
+    // the place is already chosen on the map: no restaurant search, the name field comes first,
+    // and no field is focused (on a phone that would open the keyboard over the form)
+    queryStep.hidden = true;
+    choose({ name: '', address: '', lat: latlng.lat, lng: latlng.lng, external_id: null }, true);
+    addPanel.scrollTop = 0;
+
+    var nearest = null;
+    places.forEach(function (p) {
+      var d = distanceM(latlng.lat, latlng.lng, p.lat, p.lng);
+      if (d <= NEARBY_M && (!nearest || d < nearest.d)) nearest = { place: p, d: d };
+    });
+    if (nearest) {
+      nameInput.value = nearest.place.name;
+      addressInput.value = nearest.place.address || '';
+      nameHint.textContent = 'Already recommended near here.';
+      showDuplicate(nearest.place, true);
+      return;
+    }
+    await suggestName(latlng);
+  }
+
+  async function suggestName(latlng) {
+    var seq = ++pressSeq;
+    nameInput.placeholder = 'Looking up the nearest place…';
+    nameHint.textContent = 'Looking up the nearest place…';
+    var found = null;
+    try {
+      found = await window.NinesPlaces.nearestPlace(latlng.lat, latlng.lng);
+    } catch (e) {
+      found = null;
+    }
+    if (seq !== pressSeq || !chosen || addPanel.hidden) return;
+    nameInput.placeholder = '';
+    if (nameInput.value.trim()) { nameHint.textContent = ''; return; } // the member already typed a name
+    if (found) {
+      nameInput.value = found.name;
+      if (!addressInput.value) addressInput.value = found.address || '';
+      chosen.external_id = found.external_id;
+      chosen.suggestedName = found.name;
+      nameHint.textContent = 'Suggested from the map. Change it if needed.';
+    } else {
+      nameHint.textContent = 'No place found here. Type the restaurant\'s name.';
+    }
+  }
+
+  differentButton.addEventListener('click', function () {
+    var spot = chosen && L.latLng(chosen.lat, chosen.lng);
+    nameInput.value = '';
+    addressInput.value = '';
+    clearDuplicate();
+    if (spot) suggestName(spot);
+  });
+
+  // Long-press (touch, pen, or a long mouse press) and right-click both open the add flow.
+  // A press is cancelled when the finger moves (a drag), a second finger touches (a pinch),
+  // or the map starts moving or zooming.
+  function setUpLongPress() {
+    var box = map.getContainer();
+    var press = null; // { id, x, y, timer }
+    function cancel() { if (press) { clearTimeout(press.timer); press = null; } }
+    box.addEventListener('pointerdown', function (e) {
+      if (press && e.pointerId !== press.id) { cancel(); return; } // a second finger: a pinch
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.target.closest('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
+      cancel();
+      var x = e.clientX, y = e.clientY;
+      press = { id: e.pointerId, x: x, y: y, timer: setTimeout(function () {
+        press = null;
+        addAt(map.mouseEventToLatLng({ clientX: x, clientY: y }));
+      }, LONG_PRESS_MS) };
+    });
+    // watched on the whole page: the other finger of a pinch may land on the bar or the tip
+    document.addEventListener('pointerdown', function (e) {
+      if (press && e.pointerId !== press.id) cancel();
+    }, true);
+    document.addEventListener('pointermove', function (e) {
+      if (press && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > PRESS_SLOP_PX) cancel();
+    }, true);
+    ['pointerup', 'pointercancel'].forEach(function (type) {
+      document.addEventListener(type, function (e) { if (press && e.pointerId === press.id) cancel(); }, true);
+    });
+    map.on('movestart zoomstart', cancel);
+    // right-click on a computer; some phones also send this after a long-press (ignored as a repeat)
+    map.on('contextmenu', function (e) { cancel(); addAt(e.latlng); });
+  }
+
+  // ---- First-visit tip ----
+
+  function tipDismissed() {
+    try { return window.localStorage.getItem(TIP_KEY) === '1'; } catch (e) { return false; }
+  }
+  function dismissTip() {
+    tipNode.hidden = true;
+    try { window.localStorage.setItem(TIP_KEY, '1'); } catch (e) { /* private mode: shown again next time */ }
+  }
+  document.getElementById('recos-tip-close').addEventListener('click', dismissTip);
+  function showTip() {
+    if (!canAdd || tipDismissed()) return;
+    var desktop = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    document.getElementById('recos-tip-text').textContent = desktop
+      ? 'Tip: right-click (or long-press) the map to add a reco.'
+      : 'Tip: long-press the map to add a reco.';
+    tipNode.hidden = false;
   }
 
   var searchTimer = null;
@@ -370,9 +635,10 @@
   function clearDuplicate() {
     duplicate = null;
     duplicateBox.hidden = true;
+    differentButton.hidden = true;
     submitButton.textContent = 'Add my reco';
   }
-  nameInput.addEventListener('input', clearDuplicate);
+  nameInput.addEventListener('input', function () { clearDuplicate(); nameHint.textContent = ''; });
 
   visibilityInput.addEventListener('input', updateVisibilityText);
   bodyInput.addEventListener('input', updateCount);
@@ -386,20 +652,17 @@
     if (!name) { showError('Please enter the restaurant\'s name.'); nameInput.focus(); return; }
     if (!body || body.length > 300) { showError('Please write a reco of 1 to 300 characters.'); bodyInput.focus(); return; }
     var clubId = Number(postAs.value) || homeClub.id;
+    // a place suggested from the map keeps its OpenStreetMap id only if its name was kept
+    var externalId = chosen.suggestedName && name !== chosen.suggestedName ? null : chosen.external_id;
 
     submitButton.disabled = true;
     showError('');
     try {
       if (!duplicate) {
-        var match = await client.rpc('find_reco_place', { p_name: name, p_lat: chosen.lat, p_lng: chosen.lng, p_external_id: chosen.external_id });
+        var match = await client.rpc('find_reco_place', { p_name: name, p_lat: chosen.lat, p_lng: chosen.lng, p_external_id: externalId });
         if (match.error) throw match.error;
         if (match.data && match.data.length) {
-          duplicate = match.data[0];
-          var known = places.find(function (p) { return p.id === duplicate.id; });
-          duplicateComments.replaceChildren();
-          ((known && known.comments) || []).forEach(function (c) { duplicateComments.appendChild(commentLine(c, false)); });
-          duplicateBox.hidden = false;
-          submitButton.textContent = 'Add my reco to it';
+          showDuplicate(match.data[0], false);
           duplicateBox.scrollIntoView({ block: 'nearest' });
           return; // the member confirms with a second click
         }
@@ -410,7 +673,7 @@
         p_address: addressInput.value.trim() || null,
         p_lat: chosen.lat,
         p_lng: chosen.lng,
-        p_external_id: chosen.external_id,
+        p_external_id: externalId,
         p_body: body,
         p_visibility: visibilityChoice(),
         p_place_id: duplicate ? duplicate.id : null
@@ -418,7 +681,7 @@
       if (result.error) throw result.error;
       var added = result.data && result.data[0];
       addPanel.hidden = true;
-      addOpen.hidden = false;
+      removePressMarker();
       submitButton.textContent = 'Add my reco';
       await refresh(added && added.place_id);
       showStatus('Your reco is added.');
@@ -444,16 +707,19 @@
     });
     if (!postable.length) postAs.appendChild(el('option', { value: String(homeClub.id), text: homeClub.name }));
     postAsRow.hidden = postable.length < 2;
-    if (!access.profile) {
-      addOpen.hidden = true; // office/staff accounts have no profile, so cannot post
-    }
+    canAdd = !!access.profile; // office/staff accounts have no profile, so cannot post
+    addOpen.hidden = !canAdd;
+    if (!canAdd) emptyNode.textContent = 'No recos yet.';
 
+    document.getElementById('recos-back').href = BACK_URL;
     N.showState('ready');
-    map = L.map('recos-map', { scrollWheelZoom: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    L.control.zoom({ position: 'topright' }).addTo(map);
     L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+    setUpLongPress();
     updateVisibilityText();
     updateCount();
-    filterInput.addEventListener('input', applyFilter);
+    showTip();
     refresh();
   });
 })();

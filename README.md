@@ -21,7 +21,7 @@ database password anywhere in this repo.
 | `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
-| `members/recos.html` | **Recos**: restaurants members recommend, on a map shared across clubs. Add a reco, filter by name, edit or delete your own. Separate from the club's dinner map. |
+| `members/recos.html` | **Recos**: restaurants members recommend, on a full-screen map shared across clubs. Search by name, add a reco (+ or a long-press on the map), edit or delete your own. Separate from the club's dinner map. |
 | `members/admin.html` | Club admins only: add a member (access and card together), remove access, remove from club, edit, hide or show cards, change emails, and manage brigadier groups, all for this site's club. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/club.js` | Which club this copy of the site serves: id, name, language, tagline, map address (The Nines). |
@@ -31,7 +31,7 @@ database password anywhere in this repo.
 | `js/auth.js` | Shared Supabase client, login checks and page states. |
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
-| `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
 | `supabase/schema.sql` | The complete current schema for a new project (all clubs): tables, security rules, functions, the headshots storage bucket, the clubs and the first admins. |
@@ -170,6 +170,20 @@ unchanged.
 - **Database rules.** New recos go through the function `add_reco()` only; reading goes through
   `reco_feed()` and row-level security. Who added a restaurant (`created_by`) is never readable from
   the site. Visitors who are not signed in get nothing.
+
+#### The Recos page
+
+- **Full-screen map** with a slim bar on top: **←** back to the club's home page, **search**, and **+** to add
+  a reco. The back address is `BACK_URL` at the top of `js/recos.js` (today `../`: `/` for The Nines,
+  `/lesronds/` for Les Ronds), to change when the home page moves.
+- **Search** filters the pins by name as you type and lists the matches; picking one opens its card. It
+  ignores case and accents, and only ever sees the recos the member is allowed to see. Words starting
+  with `#` are reserved for tags, once recos have them.
+- **Long-press the map** (about half a second; right-click or a long mouse press on a computer) to add a
+  reco at that spot. The page suggests the nearest restaurant from OpenStreetMap, or leaves the name
+  empty to type. A press next to an existing reco (within about 40 m) offers to add to it instead. Moving
+  the finger or a second finger (pinch) cancels the press, so dragging and zooming still work.
+- A **tip** about long-press shows on the first visit until it is dismissed (remembered in the browser).
 
 #### Finding a restaurant
 
@@ -516,6 +530,19 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
 - [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
+#### Recos page: full-screen map and long-press
+
+Ran: in Chromium with a fake server, desktop and phone sizes, touch emulated (long-press, drag, pinch),
+English and French. To do: on a real phone.
+
+- [ ] **The map fills the screen; the bar shows ←, search and +; the CARTO / OpenStreetMap credits stay
+  visible.**
+- [ ] **Search finds a reco whatever the accents or capitals, and picking it opens its card.**
+- [ ] **Long-press an empty spot: a marker appears and the add form opens with the nearest restaurant's
+  name (or an empty name). Saving puts the reco at that spot.**
+- [ ] **Dragging or pinching the map never opens the form. Cancel removes the marker.**
+- [ ] **Long-press right next to an existing reco: "Already recommended" appears with an offer to add to it.**
 
 #### Step 8: a different photo per club
 
