@@ -629,6 +629,9 @@ where grantee = 'anon' and routine_schema = 'public';         -- expect no rows
   Supabase project. `members/recos.html` also allows the map tiles (CARTO, basemaps.cartocdn.com) and the
   place search (photon.komoot.io). The tiles use the same CARTO key as the dinner map (public by design; allowed domains are set in the CARTO dashboard).
 - Leaflet `1.9.4` (the Recos map) is loaded from jsDelivr with subresource-integrity hashes, like supabase-js.
+- **Fresh files after each deploy:** the build adds `?v=<commit>` to every local stylesheet and script
+  address in the pages (`scripts/build-site.sh`), so browsers and phones never mix a new page with an
+  old cached `style.css` or script.
 - Paths are relative, so the site works both at `site.thenines.club` and at
   `officeofthenines.github.io/site/`.
 - Text from the database is always inserted with `textContent`, never `innerHTML`.
