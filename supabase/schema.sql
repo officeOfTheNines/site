@@ -14,9 +14,10 @@
 --   club_profiles   = a person's card in one club (bio, listed, foreign member, show email/phone,
 --                     and optionally its own photo for that club, override_photo_path)
 --   brigadier_groups / brigadier_group_members = the teams that organise each club's dinners
---   reco_places     = restaurants members recommend (Recos), shared across clubs
+--   venues          = restaurants, shared across clubs: recommended in Recos and/or hosting club dinners
 --   reco_comments   = the recos themselves: author, club posted as, text, who can see it
---                     ('everyone' | 'club' | 'me'); a place is visible only through a visible reco
+--                     ('everyone' | 'club' | 'me'); a venue is visible on Recos only through a visible reco
+--   club_events     = club dinners at a venue: date, brigadiers' names, wine/food/vibe ratings (not used yet)
 -- Everything is enforced with row-level security; the publishable (anon) key can read nothing.
 
 begin;
@@ -31,7 +32,9 @@ create table if not exists public.clubs (
   name        text not null,
   site_url    text,
   map_url     text,
-  created_on  timestamptz not null default now()
+  created_on  timestamptz not null default now(),
+  rating_scale smallint not null default 10,   -- dinner ratings are out of this (The Nines 10, Les Ronds 20)
+  constraint clubs_rating_scale check (rating_scale between 1 and 100)
 );
 
 -- Access, per club (one row per person per club).
@@ -124,9 +127,9 @@ create index if not exists brigadier_group_members_profile_idx on public.brigadi
 -- Clubs and the first admins (left alone if already present)
 -- ---------------------------------------------------------------------------
 
-insert into public.clubs (id, slug, name, site_url, map_url) values
-  (1, 'nines',    'The Nines',       'https://site.thenines.club/',          'https://map.thenines.club'),
-  (2, 'lesronds', 'Dîner des Ronds', 'https://site.thenines.club/lesronds/', 'https://ronds.thenines.club')
+insert into public.clubs (id, slug, name, site_url, map_url, rating_scale) values
+  (1, 'nines',    'The Nines',       'https://site.thenines.club/',          'https://map.thenines.club',   10),
+  (2, 'lesronds', 'Dîner des Ronds', 'https://site.thenines.club/lesronds/', 'https://ronds.thenines.club', 20)
 on conflict (id) do nothing;
 
 insert into public.super_admins (email, added_by) values ('jbsolanet@gmail.com', 'schema.sql')
@@ -1052,11 +1055,11 @@ notify pgrst, 'reload schema';
 
 -- ---------------------------------------------------------------------------
 -- Recos: members' restaurant recommendations (see migrations/007_recos.sql for the full notes).
--- reco_places = a restaurant; reco_comments = a member's recommendation of it, posted as one of
+-- venues = a restaurant; reco_comments = a member's recommendation of it, posted as one of
 -- their clubs, visible to 'everyone' (any club), 'club' (that club) or 'me' (the author).
 -- ---------------------------------------------------------------------------
 
-create table if not exists public.reco_places (
+create table if not exists public.venues (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
   address      text,
@@ -1065,17 +1068,17 @@ create table if not exists public.reco_places (
   external_id  text,             -- a map provider's id for the place (e.g. 'osm:N123'), when known
   created_by   uuid references public.profiles (id) on delete set null,
   created_at   timestamptz not null default now(),
-  constraint reco_places_name_shape    check (btrim(name) <> '' and char_length(name) <= 120),
-  constraint reco_places_address_len   check (address is null or char_length(address) <= 300),
-  constraint reco_places_lat_range     check (lat between -90 and 90),
-  constraint reco_places_lng_range     check (lng between -180 and 180),
-  constraint reco_places_external_len  check (external_id is null or char_length(external_id) <= 200)
+  constraint venues_name_shape    check (btrim(name) <> '' and char_length(name) <= 120),
+  constraint venues_address_len   check (address is null or char_length(address) <= 300),
+  constraint venues_lat_range     check (lat between -90 and 90),
+  constraint venues_lng_range     check (lng between -180 and 180),
+  constraint venues_external_len  check (external_id is null or char_length(external_id) <= 200)
 );
-create index if not exists reco_places_external_idx on public.reco_places (external_id);
+create index if not exists venues_external_idx on public.venues (external_id);
 
 create table if not exists public.reco_comments (
   id          uuid primary key default gen_random_uuid(),
-  place_id    uuid not null references public.reco_places (id) on delete cascade,
+  venue_id    uuid not null references public.venues (id) on delete cascade,
   profile_id  uuid not null references public.profiles (id) on delete cascade,
   club_id     integer not null references public.clubs (id),
   body        text not null,
@@ -1085,10 +1088,10 @@ create table if not exists public.reco_comments (
   constraint reco_comments_body_shape  check (btrim(body) <> '' and char_length(body) <= 300),
   constraint reco_comments_visibility  check (visibility in ('everyone', 'club', 'me'))
 );
-create index if not exists reco_comments_place_idx   on public.reco_comments (place_id);
+create index if not exists reco_comments_venue_idx   on public.reco_comments (venue_id);
 create index if not exists reco_comments_profile_idx on public.reco_comments (profile_id);
 
-alter table public.reco_places   enable row level security;
+alter table public.venues   enable row level security;
 alter table public.reco_comments enable row level security;
 
 -- ---------------------------------------------------------------------------
@@ -1123,8 +1126,8 @@ set search_path = ''
 as $$
   select public.has_any_access() and (
     exists (select 1 from public.reco_comments c
-            where c.place_id = p_place and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id))
-    or exists (select 1 from public.reco_places p
+            where c.venue_id = p_place and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id))
+    or exists (select 1 from public.venues p
                where p.id = p_place and p.created_by is not null and p.created_by = public.current_profile_id())
   );
 $$;
@@ -1157,7 +1160,7 @@ $$;
 
 -- Does a stored place match what someone is adding? Same provider id, or within about 30 metres
 -- with a similar name (equal, or one contained in the other, ignoring case, accents and punctuation).
-create or replace function public.reco_place_matches(p_place public.reco_places, p_name text,
+create or replace function public.reco_place_matches(p_place public.venues, p_name text,
                                                      p_lat double precision, p_lng double precision,
                                                      p_external_id text)
 returns boolean
@@ -1183,7 +1186,7 @@ security definer
 set search_path = ''
 as $$
   select p.id, p.name, p.address, p.lat, p.lng
-  from public.reco_places p
+  from public.venues p
   where public.has_any_access()
     and public.reco_place_matches(p, p_name, p_lat, p_lng, nullif(btrim(p_external_id), ''))
     and public.can_see_reco_place(p.id)
@@ -1193,7 +1196,7 @@ as $$
 $$;
 
 -- Add a reco. Attaches the comment to:
---   1. p_place_id, when given and visible to the caller (they confirmed "Already recommended");
+--   1. p_venue_id, when given and visible to the caller (they confirmed "Already recommended");
 --   2. otherwise any matching place, visible or not (the caller is told nothing about a hidden one);
 --   3. otherwise a new place.
 -- The caller must have a profile and belong to p_club. Returns the place id and the comment id.
@@ -1206,9 +1209,9 @@ create or replace function public.add_reco(
   p_external_id text,
   p_body text,
   p_visibility text default 'everyone',
-  p_place_id uuid default null
+  p_venue_id uuid default null
 )
-returns table (place_id uuid, comment_id uuid)
+returns table (venue_id uuid, comment_id uuid)
 language plpgsql
 volatile
 security definer
@@ -1235,27 +1238,27 @@ begin
   end if;
 
   -- serialise adds so two members adding the same place at once share one place
-  perform pg_advisory_xact_lock(hashtext('public.reco_places.add'));
+  perform pg_advisory_xact_lock(hashtext('public.venues.add'));
 
-  if p_place_id is not null and public.can_see_reco_place(p_place_id) then
-    pid := p_place_id;
+  if p_venue_id is not null and public.can_see_reco_place(p_venue_id) then
+    pid := p_venue_id;
   end if;
 
   if pid is null then
     select p.id into pid
-    from public.reco_places p
+    from public.venues p
     where public.reco_place_matches(p, p_name, p_lat, p_lng, ext)
     order by (p.external_id is not distinct from ext) desc, public.reco_distance_m(p.lat, p.lng, p_lat, p_lng)
     limit 1;
   end if;
 
   if pid is null then
-    insert into public.reco_places (name, address, lat, lng, external_id, created_by)
+    insert into public.venues (name, address, lat, lng, external_id, created_by)
     values (btrim(p_name), nullif(btrim(p_address), ''), p_lat, p_lng, ext, me)
     returning id into pid;
   end if;
 
-  insert into public.reco_comments (place_id, profile_id, club_id, body, visibility)
+  insert into public.reco_comments (venue_id, profile_id, club_id, body, visibility)
   values (pid, me, p_club, btrim(p_body), p_visibility)
   returning id into cid;
 
@@ -1294,8 +1297,8 @@ $$;
 -- author shown as "First L." and the club's name. Never emails or phones.
 create or replace function public.reco_feed()
 returns table (
-  place_id      uuid,
-  place_name    text,
+  venue_id      uuid,
+  venue_name    text,
   address       text,
   lat           double precision,
   lng           double precision,
@@ -1320,9 +1323,9 @@ as $$
          c.created_at, c.updated_at,
          coalesce(c.profile_id = public.current_profile_id(), false),
          coalesce(c.profile_id = public.current_profile_id() or public.is_admin(c.club_id), false)
-  from public.reco_places p
+  from public.venues p
   left join public.reco_comments c
-    on c.place_id = p.id and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id)
+    on c.venue_id = p.id and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id)
   left join public.profiles pr on pr.id = c.profile_id
   left join public.clubs cl on cl.id = c.club_id
   where public.has_any_access()
@@ -1347,7 +1350,7 @@ begin
   if tg_op = 'INSERT' then
     new.created_at := now();
   else
-    new.place_id := old.place_id;
+    new.venue_id := old.venue_id;
     new.profile_id := old.profile_id;
     new.club_id := old.club_id;
     new.created_at := old.created_at;
@@ -1369,9 +1372,11 @@ security definer
 set search_path = ''
 as $$
 begin
-  delete from public.reco_places p
-  where p.id = old.place_id
-    and not exists (select 1 from public.reco_comments c where c.place_id = old.place_id);
+  -- the last reco gone: remove the venue, unless a club event (a dinner) uses it
+  delete from public.venues p
+  where p.id = old.venue_id
+    and not exists (select 1 from public.reco_comments c where c.venue_id = old.venue_id)
+    and not exists (select 1 from public.club_events e where e.venue_id = old.venue_id);
   return old;
 end;
 $$;
@@ -1385,12 +1390,12 @@ create trigger reco_comments_after_delete
 -- Row-level security and privileges
 -- ---------------------------------------------------------------------------
 
-drop policy if exists "people see reco places they can see"    on public.reco_places;
+drop policy if exists "people see reco places they can see"    on public.venues;
 drop policy if exists "people see reco comments they can see"  on public.reco_comments;
 drop policy if exists "authors edit their own reco comments"   on public.reco_comments;
 drop policy if exists "authors, club admins and super admins delete reco comments" on public.reco_comments;
 
-create policy "people see reco places they can see" on public.reco_places
+create policy "people see reco places they can see" on public.venues
   for select to authenticated
   using (public.can_see_reco_place(id));
 
@@ -1411,10 +1416,10 @@ create policy "authors, club admins and super admins delete reco comments" on pu
     or (select public.is_super_admin())
   );
 
-revoke all on table public.reco_places, public.reco_comments from public, anon, authenticated;
+revoke all on table public.venues, public.reco_comments from public, anon, authenticated;
 -- places: never who created them or when (that would reveal a place's history)
-grant select (id, name, address, lat, lng, external_id) on table public.reco_places to authenticated;
-grant select (id, place_id, club_id, body, visibility, created_at, updated_at) on table public.reco_comments to authenticated;
+grant select (id, name, address, lat, lng, external_id) on table public.venues to authenticated;
+grant select (id, venue_id, club_id, body, visibility, created_at, updated_at) on table public.reco_comments to authenticated;
 grant update (body, visibility) on table public.reco_comments to authenticated;
 grant delete on table public.reco_comments to authenticated;
 -- new places and comments only through add_reco()
@@ -1423,7 +1428,7 @@ revoke execute on function public.can_see_reco_comment(text, integer, uuid)     
 revoke execute on function public.can_see_reco_place(uuid)                           from public, anon;
 revoke execute on function public.reco_name_key(text)                                from public, anon, authenticated;
 revoke execute on function public.reco_distance_m(double precision, double precision, double precision, double precision) from public, anon, authenticated;
-revoke execute on function public.reco_place_matches(public.reco_places, text, double precision, double precision, text) from public, anon, authenticated;
+revoke execute on function public.reco_place_matches(public.venues, text, double precision, double precision, text) from public, anon, authenticated;
 revoke execute on function public.reco_author_label(text)                            from public, anon, authenticated;
 revoke execute on function public.find_reco_place(text, double precision, double precision, text) from public, anon;
 revoke execute on function public.add_reco(integer, text, text, double precision, double precision, text, text, text, uuid) from public, anon;
@@ -1437,5 +1442,284 @@ grant execute on function public.find_reco_place(text, double precision, double 
 grant execute on function public.add_reco(integer, text, text, double precision, double precision, text, text, text, uuid) to authenticated;
 grant execute on function public.reco_feed()                                        to authenticated;
 
+
+-- ---------------------------------------------------------------------------
+-- Club events, activity feed and the My clubs | All clubs scope (see migrations/009_activity_feed.sql)
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- Club events (dinners): ready for the two dinner maps' Google Sheets, not used by the site yet.
+-- One row per dinner, at a venue (the same venues as Recos, so a restaurant is one pin for both).
+-- Brigadiers are stored as the names written at the time (a JSON array of text), so later name
+-- changes do not rewrite history. Ratings are out of the club's rating_scale (clubs table: The Nines
+-- 10, Les Ronds 20); sheet columns: bottles = wine, plate = food, atmosphere = vibe.
+-- Nobody can read or write it from the site yet (no permissions granted): it is filled by the
+-- office in the SQL editor or by an import script.
+-- ---------------------------------------------------------------------------
+create table if not exists public.club_events (
+  id            uuid primary key default gen_random_uuid(),
+  club_id       integer not null references public.clubs (id),
+  venue_id      uuid not null references public.venues (id) on delete restrict,
+  event_date    date,                          -- when known
+  season        text,                          -- as written in the sheet, e.g. "Season 3"
+  month         text,                          -- as written in the sheet, e.g. "March 2025"
+  brigadiers    jsonb not null default '[]'::jsonb,   -- ["First Last", ...]
+  rating_wine   numeric(5,2),                  -- out of the club's rating_scale (clubs table)
+  rating_food   numeric(5,2),
+  rating_vibe   numeric(5,2),
+  menu_url      text,
+  notes         text,
+  source_ref    text,                          -- the sheet's own id for the row, for re-runnable imports
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  constraint club_events_brigadiers_shape check (
+    jsonb_typeof(brigadiers) = 'array'
+    and not jsonb_path_exists(brigadiers, '$[*] ? (@.type() != "string")')),
+  constraint club_events_ratings_positive check (coalesce(rating_wine, 0) >= 0 and coalesce(rating_food, 0) >= 0 and coalesce(rating_vibe, 0) >= 0),
+  constraint club_events_menu_url      check (menu_url is null or menu_url ~ '^https://'),
+  constraint club_events_text_lengths  check (char_length(coalesce(season, '')) <= 60 and char_length(coalesce(month, '')) <= 60
+                                              and char_length(coalesce(notes, '')) <= 2000 and char_length(coalesce(source_ref, '')) <= 60),
+  constraint club_events_source_ref_key unique (club_id, source_ref)
+);
+create index if not exists club_events_club_date_idx on public.club_events (club_id, event_date desc);
+create index if not exists club_events_venue_idx     on public.club_events (venue_id);
+
+create or replace function public.club_events_before_write()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  scale smallint;
+begin
+  new.season := nullif(btrim(new.season), '');
+  new.month := nullif(btrim(new.month), '');
+  new.notes := nullif(btrim(new.notes), '');
+  new.updated_at := now();
+  if tg_op = 'INSERT' then new.created_at := now(); else new.created_at := old.created_at; end if;
+  -- ratings may not exceed the club's scale (clubs.rating_scale: 10 for The Nines, 20 for Les Ronds)
+  select c.rating_scale into scale from public.clubs c where c.id = new.club_id;
+  if greatest(new.rating_wine, new.rating_food, new.rating_vibe) > scale then
+    raise exception 'Ratings for this club are out of %.', scale using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists club_events_before_write on public.club_events;
+create trigger club_events_before_write
+  before insert or update on public.club_events
+  for each row execute function public.club_events_before_write();
+
+alter table public.club_events enable row level security;
+revoke all on table public.club_events from public, anon, authenticated;
+revoke execute on function public.club_events_before_write() from public, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Indexes
+-- ---------------------------------------------------------------------------
+create index if not exists reco_comments_created_idx       on public.reco_comments (created_at desc, id desc);
+create index if not exists reco_comments_venue_created_idx on public.reco_comments (venue_id, created_at, id);
+create index if not exists reco_comments_profile_created_idx on public.reco_comments (profile_id, created_at desc);
+create index if not exists club_access_email_idx           on public.club_access (email);
+
+-- ---------------------------------------------------------------------------
+-- Helpers
+-- ---------------------------------------------------------------------------
+
+-- For one comment the signed-in member can see: is it theirs, the author as "First L.", and does the
+-- author belong to a club the member belongs to. Returns no row for a comment they cannot see.
+-- (Signed-in members cannot read reco_comments.profile_id directly; this gives only these facts.)
+create or replace function public.reco_comment_facts(p_comment uuid)
+returns table (is_mine boolean, author_label text, shares_club boolean)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(c.profile_id = public.current_profile_id(), false),
+         public.reco_author_label(pr.display_name),
+         exists (select 1 from public.club_access a where a.email = pr.email and public.is_member(a.club_id))
+  from public.reco_comments c
+  join public.profiles pr on pr.id = c.profile_id
+  where c.id = p_comment
+    and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id);
+$$;
+
+-- "Postcode or area" from a free-text address: a UK postcode ("EC1M 4AY"), a French postcode and town
+-- ("75011 Paris"), otherwise the last part of the address.
+create or replace function public.reco_area(p_address text)
+returns text
+language sql
+immutable
+set search_path = ''
+as $$
+  select case
+    when p_address is null or btrim(p_address) = '' then null
+    when p_address ~* '\m[A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2}\M'
+      then upper(substring(p_address from '(?i)\m([A-Z]{1,2}[0-9][0-9A-Z]?\s*[0-9][A-Z]{2})\M'))
+    when p_address ~ '\m[0-9]{5}\s+[^,]+'
+      then btrim(substring(p_address from '\m([0-9]{5}\s+[^,]+)'))
+    else left(btrim(regexp_replace(p_address, '^.*,', '')), 40)
+  end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- The home feed
+-- ---------------------------------------------------------------------------
+create or replace function public.activity_feed(
+  p_scope  text        default 'my_clubs',
+  p_limit  integer     default 20,
+  p_before timestamptz default null
+)
+returns table (
+  event_type   text,         -- 'reco_added' or 'comment_added'
+  created_at   timestamptz,
+  comment_id   uuid,
+  venue_id     uuid,         -- the reco (restaurant) to open on the map
+  venue_name   text,
+  area         text,
+  author_label text,         -- "First L."
+  club_name    text,         -- the club the author posted as
+  stars        smallint,     -- not stored yet: always null
+  price_level  smallint,     -- not stored yet: always null
+  snippet      text,         -- the comment, cut to about 140 characters
+  image_path   text          -- reserved for photos: always null for now
+)
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+#variable_conflict use_column
+begin
+  if p_scope is null or p_scope not in ('my_clubs', 'all_clubs') then
+    raise exception 'Scope must be my_clubs or all_clubs.' using errcode = '22023';
+  end if;
+  return query
+  select
+    case when exists (
+      -- an earlier comment on the same restaurant that the viewer can see (row-level security applies)
+      select 1 from public.reco_comments e
+      where e.venue_id = c.venue_id and (e.created_at, e.id) < (c.created_at, c.id)
+    ) then 'comment_added' else 'reco_added' end,
+    c.created_at,
+    c.id,
+    p.id,
+    p.name,
+    public.reco_area(p.address),
+    f.author_label,
+    cl.name,
+    null::smallint,
+    null::smallint,
+    case when char_length(c.body) > 140 then rtrim(left(c.body, 139)) || '…' else c.body end,
+    null::text
+  from public.reco_comments c
+  cross join lateral public.reco_comment_facts(c.id) f
+  join public.venues p on p.id = c.venue_id
+  left join public.clubs cl on cl.id = c.club_id
+  where public.has_any_access()
+    and (p_before is null or c.created_at < p_before)
+    and not f.is_mine
+    and c.visibility <> 'me'
+    and (c.visibility <> 'club' or public.is_member(c.club_id))
+    and (f.shares_club or (p_scope = 'all_clubs' and c.visibility = 'everyone'))
+  order by c.created_at desc, c.id desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 50);
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- The member's own recos and comments (home page, "My activity"). Not affected by the scope.
+-- Whether a comment counts as "added" is judged on the comments the member can see, so it never
+-- hints at a hidden earlier comment.
+-- ---------------------------------------------------------------------------
+create or replace function public.my_reco_activity(
+  p_limit  integer     default 20,
+  p_before timestamptz default null
+)
+returns table (
+  event_type   text,
+  created_at   timestamptz,
+  comment_id   uuid,
+  venue_id     uuid,
+  venue_name   text,
+  area         text,
+  club_name    text,
+  visibility   text,
+  stars        smallint,
+  price_level  smallint,
+  snippet      text,
+  image_path   text
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    case when exists (
+      select 1 from public.reco_comments e
+      where e.venue_id = c.venue_id and (e.created_at, e.id) < (c.created_at, c.id)
+        and public.can_see_reco_comment(e.visibility, e.club_id, e.profile_id)
+    ) then 'comment_added' else 'reco_added' end,
+    c.created_at, c.id, p.id, p.name, public.reco_area(p.address), cl.name, c.visibility,
+    null::smallint, null::smallint,
+    case when char_length(c.body) > 140 then rtrim(left(c.body, 139)) || '…' else c.body end,
+    null::text
+  from public.reco_comments c
+  join public.venues p on p.id = c.venue_id
+  left join public.clubs cl on cl.id = c.club_id
+  where public.has_any_access()
+    and public.current_profile_id() is not null
+    and c.profile_id = public.current_profile_id()
+    and (p_before is null or c.created_at < p_before)
+  order by c.created_at desc, c.id desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 50);
+$$;
+
+-- ---------------------------------------------------------------------------
+-- The Recos map's "My clubs" view: the restaurants with at least one comment that is the member's own
+-- or by a member of their clubs, under the same visibility rules as the feed. ("All clubs" on the map
+-- shows every pin the member can see, as before.)
+-- ---------------------------------------------------------------------------
+create or replace function public.reco_scope_venue_ids(p_scope text default 'my_clubs')
+returns setof uuid
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+#variable_conflict use_column
+begin
+  if p_scope is null or p_scope not in ('my_clubs', 'all_clubs') then
+    raise exception 'Scope must be my_clubs or all_clubs.' using errcode = '22023';
+  end if;
+  return query
+  select distinct c.venue_id
+  from public.reco_comments c
+  cross join lateral public.reco_comment_facts(c.id) f
+  where public.has_any_access()
+    and (f.is_mine
+         or (c.visibility <> 'me'
+             and (c.visibility <> 'club' or public.is_member(c.club_id))
+             and (f.shares_club or (p_scope = 'all_clubs' and c.visibility = 'everyone'))));
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Permissions: signed-in people only
+-- ---------------------------------------------------------------------------
+revoke execute on function public.reco_comment_facts(uuid)                          from public, anon;
+revoke execute on function public.reco_area(text)                                   from public, anon;
+revoke execute on function public.activity_feed(text, integer, timestamptz)         from public, anon;
+revoke execute on function public.my_reco_activity(integer, timestamptz)            from public, anon;
+revoke execute on function public.reco_scope_venue_ids(text)                        from public, anon;
+grant execute on function public.reco_comment_facts(uuid)                           to authenticated;
+grant execute on function public.reco_area(text)                                    to authenticated;
+grant execute on function public.activity_feed(text, integer, timestamptz)          to authenticated;
+grant execute on function public.my_reco_activity(integer, timestamptz)             to authenticated;
+grant execute on function public.reco_scope_venue_ids(text)                         to authenticated;
 
 commit;

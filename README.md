@@ -18,7 +18,7 @@ database password anywhere in this repo.
 | --- | --- |
 | `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member login". |
 | `login.html` | Sign in with Google, email and password (sign in, create account, forgot password), or an emailed sign-in link. |
-| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, links. |
+| `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, **Recent activity** (recos and comments from your clubs, with the My clubs / All clubs toggle), **My activity**, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
 | `members/recos.html` | **Recos**: restaurants members recommend, on a full-screen map shared across clubs. Search by name, add a reco (+ or a long-press on the map), edit or delete your own. Separate from the club's dinner map. |
@@ -32,6 +32,7 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
 | `supabase/schema.sql` | The complete current schema for a new project (all clubs): tables, security rules, functions, the headshots storage bucket, the clubs and the first admins. |
@@ -143,7 +144,7 @@ Members' own restaurant recommendations, on a map in the members area (`members/
 the top bar). The club's official dinner map (map.thenines.club, ronds.thenines.club) is separate and
 unchanged.
 
-- **Places and comments.** `reco_places` holds one row per restaurant (name, address, coordinates, an
+- **Places and comments.** `venues` (called `reco_places` before step 9) holds one row per restaurant (name, address, coordinates, an
   optional OpenStreetMap id). `reco_comments` holds the recos: who wrote it, the club they posted as,
   a description of up to 300 characters, and who can see it.
 - **Who can see a reco** (the slider when adding one):
@@ -184,6 +185,36 @@ unchanged.
   empty to type. A press next to an existing reco (within about 40 m) offers to add to it instead. Moving
   the finger or a second finger (pinch) cancels the press, so dragging and zooming still work.
 - A **tip** about long-press shows on the first visit until it is dismissed (remembered in the browser).
+
+#### Recent activity and the My clubs / All clubs toggle (step 9)
+
+- The member home shows **Recent activity**: new recos ("added") and new comments on existing ones
+  ("commented on"), newest first, 20 at a time with "Load more". Each card shows "First L., Club", the
+  restaurant, its postcode or area, the comment cut to about 140 characters and how long ago; tapping it
+  opens that reco on the map. Below it, **My activity** lists the member's own recos and comments.
+- Everything comes from the existing reco tables through `activity_feed(scope, limit, before)`, which runs
+  with the member's own rights (row-level security applies) and adds: never your own events; "Only me"
+  never shown to others; "My club" only to that club's members. **My clubs** = by members of your clubs;
+  **All clubs** = also "Everyone" recos by members of any club. Edits make no event; deleting removes it.
+- The same toggle filters the Recos map ("All clubs" shows every pin you can see, as before). The choice
+  is shared by both pages and remembered per member in the browser; it starts on "My clubs".
+- Stars, price level and photos are not stored yet: the feed returns them as empty, and each card keeps a
+  hidden thumbnail slot for later.
+
+#### Venues and club events (step 9, ready for the dinner maps)
+
+- `venues` holds every restaurant once (each reco points to it through `reco_comments.venue_id`): those members recommend (Recos) and, later, those where the club
+  dined. A restaurant can be both, so it is one pin.
+- `club_events` is ready for the two dinner maps' Google Sheets but not used by the site yet. One row per
+  dinner: `club_id`, `venue_id`, `event_date`, `season` and `month` (as written in the sheet), `brigadiers`
+  (a JSON array of names as text, as they were at the time), `rating_wine`, `rating_food`, `rating_vibe`
+  (sheet columns bottles, plate, atmosphere), `menu_url`, `notes`, and `source_ref` (the sheet's own id,
+  so an import can be re-run). Ratings are out of the club's `clubs.rating_scale` (10 for The Nines, 20
+  for Les Ronds); the database refuses a rating above it.
+- Nobody can read or write `club_events` from the site yet: it is filled in the SQL editor or by an import
+  script. A venue used by a club event cannot be deleted, and removing its last reco keeps it.
+- Importing a sheet row: find the venue with the same rules as Recos duplicates (same map id, or within
+  about 30 m with a similar name), or create it, then add the event.
 
 #### Finding a restaurant
 
@@ -269,8 +300,9 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` and `reco_comments.place_id` to `venue_id` (no data changes; the Recos functions that use them are re-created, and `add_reco()` / `reco_feed()` now return `venue_id`), adds `clubs.rating_scale` (10 / 20) and `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
-| `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
+| `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` (renamed `venues` in step 9) and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
 | `migrations/005_multi_club.sql` | Step 5: several clubs. Adds `clubs`, `club_access` (replacing `allowed_emails`; every existing row moves to club 1), `super_admins` and `club_profiles` (each card's bio and settings move there, club 1), puts brigadier groups in club 1, and makes every rule and function per club. Runs as one transaction: if anything fails, nothing changes. |
 | `migrations/004_change_email.sql` | Step 4: `admin_change_email()`, so an admin can move a member to a new email in one action. Only adds a function. |
@@ -531,6 +563,18 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
 
+#### Step 9: activity feed and My clubs / All clubs
+
+Ran: every rule on a local copy of the database with both clubs' members (Nines-only, both clubs, Les Ronds
+admin, super admin), and the pages in Chromium with a fake server (desktop, phone, French). To do: live,
+after running `009_activity_feed.sql`.
+
+- [ ] **Your own recos never appear in Recent activity, but do in My activity.**
+- [ ] **An "Only me" reco never appears in anyone else's feed; a "My club" reco only for that club's members.**
+- [ ] **My clubs shows people from your clubs; All clubs adds "Everyone" recos from the other club.**
+- [ ] **The toggle on the home page and on the map stay in step; tapping a card opens that reco on the map.**
+- [ ] **Editing a comment does not bring it back to the top; deleting it removes it.**
+
 #### Recos page: full-screen map and long-press
 
 Ran: in Chromium with a fake server, desktop and phone sizes, touch emulated (long-press, drag, pinch),
@@ -604,7 +648,7 @@ curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/reco_feed"
 ```
 
 ```bash
-curl -s "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/reco_places?select=*" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9"
+curl -s "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/venues?select=*" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9"
 ```
 
 The headshots one should return an error or an empty list `[]`, never file names.

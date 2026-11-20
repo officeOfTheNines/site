@@ -16,5 +16,8 @@
     if (access.profile && access.card && !access.card.member_updated_on) {
       document.getElementById('profile-prompt').hidden = false;
     }
+
+    // Recent activity and My activity (js/activity.js)
+    if (window.NinesActivity) window.NinesActivity.start(access);
   });
 })();

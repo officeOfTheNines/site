@@ -56,6 +56,32 @@
         <a class="button" href="profile.html">Fill in my profile</a>
       </section>
 
+      <!-- Home sections, one block each. Club news or announcements can go above or below. -->
+      <section id="activity-section" class="panel home-section" hidden aria-labelledby="activity-heading">
+        <div class="section-head">
+          <h2 id="activity-heading">Recent activity</h2>
+          <div id="activity-scope"></div>
+        </div>
+        <p id="activity-error" class="message error" role="alert"></p>
+        <ul id="activity-list" class="activity-list" aria-live="polite"></ul>
+        <div id="activity-loading" class="loading small-loading" role="status" hidden>
+          <span class="spinner" aria-hidden="true"></span><span>Loading…</span>
+        </div>
+        <p id="activity-empty" class="muted" hidden>No activity yet. <a href="recos.html">Add the first reco</a></p>
+        <button type="button" class="button secondary" id="activity-more" hidden>Load more</button>
+      </section>
+
+      <section id="my-activity-section" class="panel home-section" hidden aria-labelledby="my-activity-heading">
+        <h2 id="my-activity-heading">My activity</h2>
+        <p id="my-activity-error" class="message error" role="alert"></p>
+        <ul id="my-activity-list" class="activity-list"></ul>
+        <div id="my-activity-loading" class="loading small-loading" role="status" hidden>
+          <span class="spinner" aria-hidden="true"></span><span>Loading…</span>
+        </div>
+        <p id="my-activity-empty" class="muted" hidden>You have not added any recos yet. <a href="recos.html">Add one</a></p>
+        <button type="button" class="button secondary" id="my-activity-more" hidden>Load more</button>
+      </section>
+
       <section class="panel">
         <h2>Member area</h2>
         <ul class="link-list">
@@ -76,6 +102,8 @@
   <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
+  <script src="../js/scope.js"></script>
+  <script src="../js/activity.js"></script>
   <script src="../js/members.js"></script>
 </body>
 </html>

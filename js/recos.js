@@ -19,9 +19,9 @@
     me: 'Only me: nobody else can see it.'
   };
   var CENTRES = { 1: [51.5072, -0.1276], 2: [48.8566, 2.3522] }; // London, Paris
-  // Where the back arrow goes: this club's home page ('/' for The Nines, '/lesronds/' for Les Ronds).
-  // Change it here when the home page moves (club news, new recos, comments on recos).
-  var BACK_URL = '../';
+  // Where the back arrow goes: this club's member home (club news and recent activity).
+  // Change it here if the home page moves.
+  var BACK_URL = 'index.html';
   var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there
   var PRESS_SLOP_PX = 8;     // moving further than this cancels the press (it is a drag)
   var NEARBY_M = 40;         // a long-press this close to a pin offers to add to that restaurant
@@ -41,6 +41,7 @@
   var searchClear = document.getElementById('recos-search-clear');
   var searchList = document.getElementById('recos-search-results');
   var tipNode = document.getElementById('recos-tip');
+  var scopeEmptyNode = document.getElementById('recos-scope-empty');
 
   var addOpen = document.getElementById('add-open');
   var addPanel = document.getElementById('add-panel');
@@ -81,6 +82,10 @@
   var homeClub = null;
   var canAdd = false;     // members with a profile; office accounts cannot post
   var pressMarker = null; // temporary marker where a long-press happened
+  var userId = null;
+  var scope = 'my_clubs'; // shared with the home feed (js/scope.js)
+  var scopeIds = null;    // "My clubs": the ids of the places in scope (from reco_scope_venue_ids)
+  var forcedId = null;    // a place opened from a link stays on the map whatever the scope
 
   var statusTimer = null;
   function showError(text) { clearTimeout(statusTimer); statusBox.textContent = ''; errorBox.textContent = text || ''; }
@@ -157,15 +162,36 @@
 
   // ---- Loading and drawing ----
 
+  // "My clubs": which places to show (the database applies the same rules as the home feed).
+  // "All clubs": every place the member can see, as before.
+  async function loadScope() {
+    scopeIds = null;
+    if (scope !== 'my_clubs') return;
+    var result = await client.rpc('reco_scope_venue_ids', { p_scope: 'my_clubs' });
+    if (result.error) throw result.error;
+    scopeIds = {};
+    (result.data || []).forEach(function (row) {
+      var id = typeof row === 'string' ? row : row.reco_scope_venue_ids;
+      scopeIds[id] = true;
+    });
+  }
+
+  function inScope(p) { return scope !== 'my_clubs' || !scopeIds || scopeIds[p.id] || p.id === forcedId; }
+
   async function load() {
     var result = await client.rpc('reco_feed');
     if (result.error) throw result.error;
+    try {
+      await loadScope();
+    } catch (e) {
+      scopeIds = null; // the scope could not be checked: show every reco the member can see
+    }
     var byId = {};
     places = [];
     (result.data || []).forEach(function (row) {
-      var place = byId[row.place_id];
+      var place = byId[row.venue_id];
       if (!place) {
-        place = byId[row.place_id] = { id: row.place_id, name: row.place_name, address: row.address, lat: row.lat, lng: row.lng, comments: [] };
+        place = byId[row.venue_id] = { id: row.venue_id, name: row.venue_name, address: row.address, lat: row.lat, lng: row.lng, comments: [] };
         places.push(place);
       }
       if (row.comment_id) place.comments.push(row);
@@ -191,8 +217,13 @@
       markers[place.id] = marker;
     });
     applyFilter();
-    if (places.length) {
-      map.fitBounds(L.latLngBounds(places.map(function (p) { return [p.lat, p.lng]; })), { padding: [40, 40], maxZoom: 15 });
+    fitShown();
+  }
+
+  function fitShown() {
+    var shown = places.filter(inScope);
+    if (shown.length) {
+      map.fitBounds(L.latLngBounds(shown.map(function (p) { return [p.lat, p.lng]; })), { padding: [40, 40], maxZoom: 15 });
     }
   }
 
@@ -212,7 +243,7 @@
 
   function shownPlaces() {
     var q = searchInput.value.trim();
-    return q ? places.filter(function (p) { return matches(p, q); }) : places;
+    return places.filter(function (p) { return inScope(p) && (!q || matches(p, q)); });
   }
 
   // Pins: only the matching recos while a search is typed.
@@ -226,6 +257,7 @@
     });
     searchClear.hidden = !searchInput.value;
     emptyNode.hidden = places.length > 0;
+    scopeEmptyNode.hidden = !(places.length > 0 && !q && shown.length === 0);
     countNode.textContent = q
       ? (shown.length === 1 ? '1 restaurant matches' : shown.length + ' restaurants match')
       : (places.length === 1 ? '1 restaurant' : places.length + ' restaurants');
@@ -310,7 +342,12 @@
   function openPlace(id) {
     var marker = markers[id];
     if (!marker) return;
-    if (!map.hasLayer(marker)) { searchInput.value = ''; applyFilter(); }
+    if (!map.hasLayer(marker)) {
+      searchInput.value = '';
+      var place = places.find(function (p) { return p.id === id; });
+      if (place && !inScope(place)) forcedId = id; // outside "My clubs": show it anyway
+      applyFilter();
+    }
     // jump (no animation) so the card can then pan itself clear of the top bar
     map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
     marker.openPopup();
@@ -342,7 +379,7 @@
       return;
     }
     showStatus('Your reco is saved.');
-    await refresh(c.place_id);
+    await refresh(c.venue_id);
   }
 
   async function deleteComment(c) {
@@ -676,14 +713,14 @@
         p_external_id: externalId,
         p_body: body,
         p_visibility: visibilityChoice(),
-        p_place_id: duplicate ? duplicate.id : null
+        p_venue_id: duplicate ? duplicate.id : null
       });
       if (result.error) throw result.error;
       var added = result.data && result.data[0];
       addPanel.hidden = true;
       removePressMarker();
       submitButton.textContent = 'Add my reco';
-      await refresh(added && added.place_id);
+      await refresh(added && added.venue_id);
       showStatus('Your reco is added.');
     } catch (error) {
       showError('Could not add your reco. ' + dbMessage(error));
@@ -712,6 +749,23 @@
     if (!canAdd) emptyNode.textContent = 'No recos yet.';
 
     document.getElementById('recos-back').href = BACK_URL;
+    userId = access.session && access.session.user && access.session.user.id;
+    scope = window.NinesScope ? window.NinesScope.get(userId) : 'all_clubs';
+    if (window.NinesScope) {
+      window.NinesScope.toggle(document.getElementById('recos-scope'), userId, async function (value) {
+        scope = value;
+        forcedId = null;
+        try {
+          await loadScope();
+        } catch (error) {
+          showError('Could not load the recos. ' + N.friendlyError(error));
+        }
+        map.closePopup();
+        applyFilter();
+        if (searchInput.value.trim()) showResults();
+        fitShown();
+      });
+    }
     N.showState('ready');
     map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -720,6 +774,8 @@
     updateVisibilityText();
     updateCount();
     showTip();
-    refresh();
+    // opened from the home feed: recos.html?venue=<id> centres that reco with its card open
+    var linked = new URLSearchParams(window.location.search).get('venue');
+    refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null);
   });
 })();
