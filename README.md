@@ -203,13 +203,14 @@ unchanged.
 
 #### Venues and club events (step 9, ready for the dinner maps)
 
-- `venues` holds every restaurant once: those members recommend (Recos) and, later, those where the club
+- `venues` holds every restaurant once (each reco points to it through `reco_comments.venue_id`): those members recommend (Recos) and, later, those where the club
   dined. A restaurant can be both, so it is one pin.
 - `club_events` is ready for the two dinner maps' Google Sheets but not used by the site yet. One row per
   dinner: `club_id`, `venue_id`, `event_date`, `season` and `month` (as written in the sheet), `brigadiers`
   (a JSON array of names as text, as they were at the time), `rating_wine`, `rating_food`, `rating_vibe`
-  (sheet columns bottles, plate, atmosphere) on the club's own `rating_scale` (10 for The Nines, 20 for
-  Les Ronds), `menu_url`, `notes`, and `source_ref` (the sheet's own id, so an import can be re-run).
+  (sheet columns bottles, plate, atmosphere), `menu_url`, `notes`, and `source_ref` (the sheet's own id,
+  so an import can be re-run). Ratings are out of the club's `clubs.rating_scale` (10 for The Nines, 20
+  for Les Ronds); the database refuses a rating above it.
 - Nobody can read or write `club_events` from the site yet: it is filled in the SQL editor or by an import
   script. A venue used by a club event cannot be deleted, and removing its last reco keeps it.
 - Importing a sheet row: find the venue with the same rules as Recos duplicates (same map id, or within
@@ -299,7 +300,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
-| `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` (no data changes; the Recos functions that name it are re-created), adds `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
+| `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` and `reco_comments.place_id` to `venue_id` (no data changes; the Recos functions that use them are re-created, and `add_reco()` / `reco_feed()` now return `venue_id`), adds `clubs.rating_scale` (10 / 20) and `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
 | `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` (renamed `venues` in step 9) and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |

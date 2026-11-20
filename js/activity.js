@@ -3,7 +3,7 @@
 //                      "My clubs | All clubs" toggle;
 //   "My activity":     the member's own recos and comments, from my_reco_activity().
 // The database decides what each member may see; this file only shows it. Each card opens the reco on
-// the Recos map (recos.html?place=<id>), centred with its card open.
+// the Recos map (recos.html?venue=<id>), centred with its card open.
 (function () {
   'use strict';
 
@@ -40,7 +40,7 @@
     if (!mine) line.appendChild(document.createTextNode(' '));
     line.appendChild(el('span', { text: verb }));
     line.appendChild(document.createTextNode(' '));
-    line.appendChild(el('strong', { 'data-no-i18n': true, text: ev.place_name }));
+    line.appendChild(el('strong', { 'data-no-i18n': true, text: ev.venue_name }));
 
     var meta = el('p', { className: 'activity-meta' });
     [ev.area, stars(ev.stars), price(ev.price_level)].filter(Boolean).forEach(function (part) {
@@ -55,7 +55,7 @@
     var thumb = el('span', { className: 'activity-thumb', hidden: !ev.image_path });
 
     return el('li', null, [
-      el('a', { className: 'activity-card', href: 'recos.html?place=' + encodeURIComponent(ev.place_id) }, [
+      el('a', { className: 'activity-card', href: 'recos.html?venue=' + encodeURIComponent(ev.venue_id) }, [
         thumb,
         el('span', { className: 'activity-body' }, [
           line,

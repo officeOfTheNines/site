@@ -84,7 +84,7 @@
   var pressMarker = null; // temporary marker where a long-press happened
   var userId = null;
   var scope = 'my_clubs'; // shared with the home feed (js/scope.js)
-  var scopeIds = null;    // "My clubs": the ids of the places in scope (from reco_scope_place_ids)
+  var scopeIds = null;    // "My clubs": the ids of the places in scope (from reco_scope_venue_ids)
   var forcedId = null;    // a place opened from a link stays on the map whatever the scope
 
   var statusTimer = null;
@@ -167,11 +167,11 @@
   async function loadScope() {
     scopeIds = null;
     if (scope !== 'my_clubs') return;
-    var result = await client.rpc('reco_scope_place_ids', { p_scope: 'my_clubs' });
+    var result = await client.rpc('reco_scope_venue_ids', { p_scope: 'my_clubs' });
     if (result.error) throw result.error;
     scopeIds = {};
     (result.data || []).forEach(function (row) {
-      var id = typeof row === 'string' ? row : row.reco_scope_place_ids;
+      var id = typeof row === 'string' ? row : row.reco_scope_venue_ids;
       scopeIds[id] = true;
     });
   }
@@ -189,9 +189,9 @@
     var byId = {};
     places = [];
     (result.data || []).forEach(function (row) {
-      var place = byId[row.place_id];
+      var place = byId[row.venue_id];
       if (!place) {
-        place = byId[row.place_id] = { id: row.place_id, name: row.place_name, address: row.address, lat: row.lat, lng: row.lng, comments: [] };
+        place = byId[row.venue_id] = { id: row.venue_id, name: row.venue_name, address: row.address, lat: row.lat, lng: row.lng, comments: [] };
         places.push(place);
       }
       if (row.comment_id) place.comments.push(row);
@@ -379,7 +379,7 @@
       return;
     }
     showStatus('Your reco is saved.');
-    await refresh(c.place_id);
+    await refresh(c.venue_id);
   }
 
   async function deleteComment(c) {
@@ -713,14 +713,14 @@
         p_external_id: externalId,
         p_body: body,
         p_visibility: visibilityChoice(),
-        p_place_id: duplicate ? duplicate.id : null
+        p_venue_id: duplicate ? duplicate.id : null
       });
       if (result.error) throw result.error;
       var added = result.data && result.data[0];
       addPanel.hidden = true;
       removePressMarker();
       submitButton.textContent = 'Add my reco';
-      await refresh(added && added.place_id);
+      await refresh(added && added.venue_id);
       showStatus('Your reco is added.');
     } catch (error) {
       showError('Could not add your reco. ' + dbMessage(error));
@@ -774,8 +774,8 @@
     updateVisibilityText();
     updateCount();
     showTip();
-    // opened from the home feed: recos.html?place=<id> centres that reco with its card open
-    var linked = new URLSearchParams(window.location.search).get('place');
+    // opened from the home feed: recos.html?venue=<id> centres that reco with its card open
+    var linked = new URLSearchParams(window.location.search).get('venue');
     refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null);
   });
 })();
