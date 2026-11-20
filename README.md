@@ -144,7 +144,7 @@ Members' own restaurant recommendations, on a map in the members area (`members/
 the top bar). The club's official dinner map (map.thenines.club, ronds.thenines.club) is separate and
 unchanged.
 
-- **Places and comments.** `reco_places` holds one row per restaurant (name, address, coordinates, an
+- **Places and comments.** `venues` (called `reco_places` before step 9) holds one row per restaurant (name, address, coordinates, an
   optional OpenStreetMap id). `reco_comments` holds the recos: who wrote it, the club they posted as,
   a description of up to 300 characters, and who can see it.
 - **Who can see a reco** (the slider when adding one):
@@ -200,6 +200,20 @@ unchanged.
   is shared by both pages and remembered per member in the browser; it starts on "My clubs".
 - Stars, price level and photos are not stored yet: the feed returns them as empty, and each card keeps a
   hidden thumbnail slot for later.
+
+#### Venues and club events (step 9, ready for the dinner maps)
+
+- `venues` holds every restaurant once: those members recommend (Recos) and, later, those where the club
+  dined. A restaurant can be both, so it is one pin.
+- `club_events` is ready for the two dinner maps' Google Sheets but not used by the site yet. One row per
+  dinner: `club_id`, `venue_id`, `event_date`, `season` and `month` (as written in the sheet), `brigadiers`
+  (a JSON array of names as text, as they were at the time), `rating_wine`, `rating_food`, `rating_vibe`
+  (sheet columns bottles, plate, atmosphere) on the club's own `rating_scale` (10 for The Nines, 20 for
+  Les Ronds), `menu_url`, `notes`, and `source_ref` (the sheet's own id, so an import can be re-run).
+- Nobody can read or write `club_events` from the site yet: it is filled in the SQL editor or by an import
+  script. A venue used by a club event cannot be deleted, and removing its last reco keeps it.
+- Importing a sheet row: find the venue with the same rules as Recos duplicates (same map id, or within
+  about 30 m with a similar name), or create it, then add the event.
 
 #### Finding a restaurant
 
@@ -285,9 +299,9 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
-| `migrations/009_activity_feed.sql` | Step 9: the home page's activity feed. Adds `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. No tables, no data changes; existing Recos functions and permissions unchanged. |
+| `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` (no data changes; the Recos functions that name it are re-created), adds `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
-| `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
+| `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` (renamed `venues` in step 9) and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
 | `migrations/006_lesronds_site.sql` | Step 6: Les Ronds' name ("Dîner des Ronds") and address (`site.thenines.club/lesronds/`) in the `clubs` table. Only updates two rows. |
 | `migrations/005_multi_club.sql` | Step 5: several clubs. Adds `clubs`, `club_access` (replacing `allowed_emails`; every existing row moves to club 1), `super_admins` and `club_profiles` (each card's bio and settings move there, club 1), puts brigadier groups in club 1, and makes every rule and function per club. Runs as one transaction: if anything fails, nothing changes. |
 | `migrations/004_change_email.sql` | Step 4: `admin_change_email()`, so an admin can move a member to a new email in one action. Only adds a function. |
@@ -633,7 +647,7 @@ curl -s -X POST "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/rpc/reco_feed"
 ```
 
 ```bash
-curl -s "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/reco_places?select=*" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9"
+curl -s "https://bfblobnjrhcacwoqszwh.supabase.co/rest/v1/venues?select=*" -H "apikey: sb_publishable_QQEzrHya4R6QqEuvYT1XyQ_BJPKGly9"
 ```
 
 The headshots one should return an error or an empty list `[]`, never file names.
