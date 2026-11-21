@@ -16,12 +16,13 @@ database password anywhere in this repo.
 
 | File | What it does |
 | --- | --- |
-| `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member login". |
+| `index.html` | Public placeholder home: logo, one line about the club, link to the map, "Member area". |
 | `login.html` | Sign in with Google, email and password (sign in, create account, forgot password), or an emailed sign-in link. |
 | `members/index.html` | Member home: "Welcome, name", role, a prompt to complete your profile, **Recent activity** (recos and comments from your clubs, with the My clubs / All clubs toggle), **My activity**, links. |
 | `members/directory.html` | All listed members as cards (photo, name, bio, and email/phone only if they chose to show them), with search by name. |
 | `members/profile.html` | Edit your own profile. Admins open it as `profile.html?profile=<id>` to edit anyone's, with extra "Listed" and "Foreign member" settings. |
 | `members/recos.html` | **Recos**: restaurants members recommend, on a full-screen map shared across clubs. Search by name, add a reco (+ or a long-press on the map), edit or delete your own. Separate from the club's dinner map. |
+| `members/dinners.html` | Club admins only: the club's dinner calendar (date, optional venue, brigadier group), open or close replies, set a deadline, and each dinner's replies (totals, "no answer yet" filter, force an answer, CSV export). |
 | `members/admin.html` | Club admins only: add a member (access and card together), remove access, remove from club, edit, hide or show cards, change emails, and manage brigadier groups, all for this site's club. |
 | `js/config.js` | Supabase project URL and publishable key (public by design). |
 | `js/club.js` | Which club this copy of the site serves: id, name, language, tagline, map address (The Nines). |
@@ -32,6 +33,7 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/dinner.js`, `js/dinners.js` | The "Next dinner" panel on the member home, and the Dinners admin page. |
 | `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
 | `css/style.css` | Dark green and brass styles. |
@@ -222,6 +224,37 @@ unchanged.
 - Importing a sheet row: find the venue with the same rules as Recos duplicates (same map id, or within
   about 30 m with a similar name), or create it, then add the event.
 
+#### Dinner calendar and replies (step 11)
+
+- **Calendar**: club admins plan dinners on the Dinners page: a date (dinners never have a time), an optional
+  venue, and the brigadier group. Each dinner's replies are **Not open** (hidden from members, the default),
+  **Open** or **Closed**, with an optional deadline. The 107 past dinners from the dinner maps are Not open.
+- **Home panel**: each member sees, for each of their clubs, the nearest dinner from today (in the club's time
+  zone: London for The Nines, Paris for Les Ronds) whose replies are Open or Closed: date, venue, the
+  brigadiers' photos and short names, and a Reply button (Attending / Not attending). With none, it shows "Our
+  last dinner at <restaurant>".
+- **Change window**: a member may change their reply only within **1 hour of their first reply** (changing it
+  does not restart the hour), only while replies are Open and before the deadline, and never once an admin has
+  set it. Otherwise the page says "Please contact us directly".
+- **Enforced in the database**: members cannot write replies directly; `rsvp_answer()` checks the club, the
+  status, the deadline, the hour and the admin lock with the server's clock. Members read only their own
+  reply; club admins read their club's. `admin_set_answer()` sets, forces or clears a reply; a reply set by an
+  admin is locked for the member.
+
+#### Claude's read access to replies (optional)
+
+Migration 011 creates a view, `v_event_answers_for_claude` (dinner date, club, venue, member name, answer, last
+change, set by: no emails, phones or ids), and a role, `claude_reader`, that can read only that view, in
+read-only transactions. The role cannot sign in until you give it a password:
+
+1. In the Supabase SQL editor, run `alter role claude_reader with login password '...';` with a long random
+   password you type there. Never put it in this repo, in a chat or in an email.
+2. Supabase dashboard, **Connect**, "Session pooler": copy the connection string, with the user
+   `claude_reader.bfblobnjrhcacwoqszwh` and that password.
+3. Give it to Claude only as a connector's configuration (for example a Postgres connector or MCP server in
+   Claude Desktop or Claude Code, where the string is stored in its settings), never typed into a conversation.
+4. To switch it off: `alter role claude_reader nologin;`.
+
 #### Finding a restaurant
 
 The search box uses **Photon** (photon.komoot.io), a free search over **OpenStreetMap** data. To respect
@@ -306,6 +339,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/011_dinner_calendar.sql` | Step 11: dinner calendar and replies. `club_events` gets `brigadier_group_id`, `rsvp_status` (not_open / open / closed) and `rsvp_deadline`, and its venue becomes optional; `clubs` gets `timezone`; new table `club_event_answers`; functions `rsvp_answer()`, `home_dinner_panel()`, `admin_set_answer()`, `admin_event_answers()`, `admin_save_event()`, `admin_set_rsvp_status()`, `admin_set_rsvp_deadline()`, `admin_club_events()`, `admin_venue_options()`, `admin_brigadier_group_options()`; the read-only view and role for Claude. Nothing deleted; past dinners unchanged. |
 | `migrations/010_menus.sql` | Step 10: dinner menus. A private `menus` storage bucket (PDFs and photos, up to 20 MB), one folder per club (`menus/<club slug>/<file>`); only that club's members and super admins can open them. `club_events.menu_url` also accepts such a path. Only adds things. |
 | `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` and `reco_comments.place_id` to `venue_id` (no data changes; the Recos functions that use them are re-created, and `add_reco()` / `reco_feed()` now return `venue_id`), adds `clubs.rating_scale` (10 / 20) and `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
@@ -355,7 +389,7 @@ Everything on the admin page applies to **this site's club** (The Nines on site.
    **Listed in the directory** and **Foreign member**, and press **Add member**. This gives access to the
    club and creates their card. You then land on their card and can add a bio, phone, photo and choices.
    If the person is already in another club, their shared name, phone and photo are reused.
-3. Tell the member to go to the site and choose **Member login**. They can use Google if that email is a
+3. Tell the member to go to the site and choose **Member area**. They can use Google if that email is a
    Google account, or create an account with a password, or ask for a sign-in link. They must use the same
    email address. Their card then becomes theirs to edit.
 
@@ -569,6 +603,20 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
 - [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
+#### Step 11: dinner calendar and replies
+
+Ran: every rule on a local copy of the database with both clubs' members and the 107 imported dinners (first
+reply, change at 59 and 61 minutes, a change inside the hour not restarting it, deadline, closed and not open,
+admin lock, cross-club, members reading only their own), and the pages in Chromium with a fake server (phone,
+desktop, French). To do: live, after running `011_dinner_calendar.sql`.
+
+- [ ] **An admin adds a dinner on the Dinners page and opens it; it appears at the top of every member's home.**
+- [ ] **A member replies; the page shows the reply and "You can change this until HH:MM"; after that time,
+  changing says "Please contact us directly".**
+- [ ] **The admin forces a reply; the member can no longer change it.**
+- [ ] **A Not open dinner never appears on a member's home.**
+- [ ] **The Replies sheet shows every member, the "no answer yet" filter and totals, and exports a CSV.**
 
 #### Step 9: activity feed and My clubs / All clubs
 

@@ -49,6 +49,9 @@
       <h1>Welcome, <span data-slot="name"></span></h1>
       <p><span class="role-badge" data-slot="role"></span></p>
 
+      <!-- Next dinner, one panel per club the member belongs to (js/dinner.js) -->
+      <div id="dinner-panels" class="dinner-panels" aria-live="polite"></div>
+
       <section id="profile-prompt" class="panel prompt" hidden aria-labelledby="prompt-heading">
         <h2 id="prompt-heading">Complete your profile</h2>
         <p>Add a photo and a few words about yourself so other members can find you in the directory.
@@ -88,11 +91,26 @@
           <li><a href="directory.html">Member directory</a></li>
           <li><a href="recos.html">Recos: restaurants members recommend</a></li>
           <li><a href="profile.html">Edit my profile</a></li>
+          <li data-admin-only hidden><a href="dinners.html">Dinners and replies</a></li>
           <li data-admin-only hidden><a href="admin.html">Manage the member list</a></li>
         </ul>
         <p class="muted">More is coming here soon.</p>
       </section>
     </div>
+
+    <dialog id="rsvp-dialog" class="dialog" aria-labelledby="rsvp-title">
+      <form method="dialog">
+        <h2 id="rsvp-title">Your reply</h2>
+        <p id="rsvp-dinner" class="muted" data-no-i18n></p>
+        <div class="rsvp-choices">
+          <button type="submit" value="attending" class="button">Attending</button>
+          <button type="submit" value="not_attending" class="button secondary">Not attending</button>
+        </div>
+        <div class="actions">
+          <button type="submit" value="cancel" class="button link">Cancel</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 
   <script src="../js/club.js"></script>
@@ -102,6 +120,8 @@
   <script src="../js/nav.js"></script>
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
+  <script src="../js/people.js"></script>
+  <script src="../js/dinner.js"></script>
   <script src="../js/scope.js"></script>
   <script src="../js/activity.js"></script>
   <script src="../js/members.js"></script>

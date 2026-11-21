@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https://bfblobnjrhcacwoqszwh.supabase.co; connect-src https://bfblobnjrhcacwoqszwh.supabase.co wss://bfblobnjrhcacwoqszwh.supabase.co; base-uri 'self'; form-action 'self'; object-src 'none'">
+  <title>Dinners · The Nines</title>
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../favicon.png">
+  <link rel="apple-touch-icon" href="../favicon-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Figtree:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body aria-busy="true">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" data-nav="dinners"></header>
+
+  <main id="main">
+    <noscript>
+      <p class="message error">This page needs JavaScript.</p>
+    </noscript>
+
+    <div data-state="loading" class="loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Checking your access…</span>
+    </div>
+
+    <section data-state="denied" class="panel" hidden aria-labelledby="denied-heading">
+      <h1 id="denied-heading">Not on the member list</h1>
+      <p>Your email is not on the member list. Please contact the office.</p>
+      <p class="muted">Signed in as <span data-slot="denied-email"></span></p>
+      <button type="button" class="button" data-action="sign-out">Sign out</button>
+    </section>
+
+    <section data-state="error" class="panel" hidden aria-labelledby="error-heading">
+      <h1 id="error-heading">Something went wrong</h1>
+      <p class="message error" role="alert" data-slot="error-message"></p>
+      <div class="actions">
+        <a class="button" href="dinners.html">Try again</a>
+        <button type="button" class="button secondary" data-action="sign-out">Sign out</button>
+      </div>
+    </section>
+
+    <section data-state="not-admin" class="panel" hidden aria-labelledby="not-admin-heading">
+      <h1 id="not-admin-heading">Admins only</h1>
+      <p>This page is for club admins.</p>
+      <a class="button" href="index.html">Go to the member home</a>
+    </section>
+
+    <div data-state="ready" hidden>
+      <div class="page-head">
+        <h1>Dinners of <span data-slot="club-name">the club</span></h1>
+        <div id="club-picker" class="club-picker" hidden></div>
+      </div>
+      <p class="muted">Plan the club's dinners, open them for replies and see who is coming. Dinners have a date
+        only, no time. Members see a dinner on their home page once its replies are open (or closed); "Not open" dinners stay hidden.</p>
+
+      <div id="dinners-error" class="message error" role="alert"></div>
+      <div id="dinners-status" class="message success" role="status" aria-live="polite"></div>
+
+      <section class="panel" aria-labelledby="event-form-heading">
+        <h2 id="event-form-heading">Add a dinner</h2>
+        <form id="event-form" class="event-form" novalidate>
+          <div class="field">
+            <label for="event-date">Date</label>
+            <input id="event-date" type="date" required>
+          </div>
+          <div class="field">
+            <label for="event-group">Brigadier group</label>
+            <select id="event-group"><option value="">Not chosen yet</option></select>
+          </div>
+          <div class="field venue-field">
+            <label for="venue-query">Venue <span class="muted">(optional)</span></label>
+            <input id="venue-query" type="search" autocomplete="off" spellcheck="false" aria-describedby="venue-hint">
+            <p id="venue-hint" class="hint">Type part of the name, then choose below. Leave empty if not chosen yet.</p>
+            <select id="venue-choice" aria-label="Matching venues" hidden></select>
+          </div>
+          <div class="form-end">
+            <button type="submit" class="button" id="event-save">Add dinner</button>
+            <button type="button" class="button secondary" id="event-cancel" hidden>Cancel editing</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" aria-labelledby="events-heading">
+        <div class="section-head">
+          <h2 id="events-heading">Dinners</h2>
+          <label class="check"><input id="show-past" type="checkbox"> <span>Show all past dinners</span></label>
+        </div>
+        <p id="events-loading" class="muted">Loading…</p>
+        <table class="allowlist" id="events-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Venue</th>
+              <th scope="col">Brigadiers</th>
+              <th scope="col">Replies</th>
+              <th scope="col">Deadline</th>
+              <th scope="col">Answers</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="events-body"></tbody>
+        </table>
+      </section>
+
+      <section id="replies" class="panel" hidden aria-labelledby="replies-heading">
+        <div class="section-head">
+          <h2 id="replies-heading">Replies</h2>
+          <button type="button" class="button secondary" id="replies-csv">Export CSV</button>
+        </div>
+        <p id="replies-dinner" class="muted" data-no-i18n></p>
+        <p id="replies-totals"></p>
+        <label class="check"><input id="replies-unanswered" type="checkbox"> <span>No answer yet only</span></label>
+        <table class="allowlist" id="replies-table">
+          <thead>
+            <tr>
+              <th scope="col">Member</th>
+              <th scope="col">Answer</th>
+              <th scope="col">Answered</th>
+              <th scope="col">Set by</th>
+              <th scope="col"><span class="visually-hidden">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="replies-body"></tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+
+  <script src="../js/club.js"></script>
+  <script src="../js/i18n.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK" crossorigin="anonymous"></script>
+  <script src="../js/config.js"></script>
+  <script src="../js/nav.js"></script>
+  <script src="../js/site.js"></script>
+  <script src="../js/auth.js"></script>
+  <script src="../js/dinners.js"></script>
+</body>
+</html>

@@ -17,6 +17,9 @@
       document.getElementById('profile-prompt').hidden = false;
     }
 
+    // Next dinner panels (js/dinner.js)
+    if (window.NinesDinner) window.NinesDinner.start(access);
+
     // Recent activity and My activity (js/activity.js)
     if (window.NinesActivity) window.NinesActivity.start(access);
   });
