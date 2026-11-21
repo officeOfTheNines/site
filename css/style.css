@@ -18,6 +18,9 @@
 
   --radius: 10px;
   --touch: 44px;
+  --gold: #D9B45F;     /* dinner scores, as on the club dinner maps */
+  --silver: #C4CACB;
+  --bronze: #C0814A;
   color-scheme: dark;
 }
 
@@ -844,6 +847,98 @@ input[type="date"], input[type="datetime-local"] {
 input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { border-color: var(--brass); outline-offset: 1px; }
 .allowlist select { width: auto; min-width: 120px; }
 .allowlist input[type="datetime-local"] { min-width: 200px; }
+
+/* ---------- Club switch (members of several clubs) ---------- */
+.club-switch { position: relative; flex: 0 1 auto; min-width: 0; }
+.club-switch-button {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 180px; min-height: var(--touch); padding: 0 10px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: transparent; color: var(--text);
+  font: inherit; font-size: 0.9rem; font-weight: 500; cursor: pointer;
+}
+.club-switch-button:hover { border-color: var(--brass); }
+.club-switch-button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.club-switch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.club-switch-caret { color: var(--muted); font-size: 0.8rem; }
+.club-switch-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 1003; min-width: 200px; list-style: none; margin: 0; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.club-switch-item {
+  width: 100%; min-height: var(--touch); padding: 0 12px; text-align: left; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); font: inherit; cursor: pointer;
+}
+.club-switch-item:hover, .club-switch-item:focus-visible { background: var(--page); outline: 1px solid var(--brass); }
+.club-switch-item[aria-checked="true"] { color: var(--brass); font-weight: 600; }
+.club-switch-item[aria-checked="true"]::before { content: "✓ "; }
+.site-header-inner .club-switch { margin: 0 auto 0 12px; }
+.club-switch-bar { flex: 0 0 auto; }   /* keeps its width; the search shrinks first */
+@media (max-width: 480px) {
+  /* the switch already shows the club's name: the brand keeps its logo only */
+  .has-club-switch .brand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .has-club-switch { flex-wrap: nowrap; }
+  .site-header-inner.has-club-switch .club-switch { margin-left: 4px; }
+}
+.club-switch-bar .club-switch-button { max-width: 120px; }
+@media (max-width: 420px) {
+  .site-header-inner .club-switch-button { max-width: 110px; }
+  .club-switch-bar .club-switch-button { max-width: 86px; padding: 0 8px; font-size: 0.85rem; }
+}
+
+/* ---------- Recos map, Events mode: the club's dinners (pins and legend as on the dinner maps) ---------- */
+.pin { display: flex; align-items: center; justify-content: center; border-radius: 50%; cursor: pointer; }
+.pin-dot {
+  width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--page);
+  display: flex; align-items: center; justify-content: center;
+  color: #0B2217; font-family: var(--font-body); font-size: 0.6875rem; font-weight: 600; letter-spacing: -0.02em;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.pin--gold .pin-dot { background: var(--gold); }
+.pin--silver .pin-dot { background: var(--silver); }
+.pin--bronze .pin-dot { background: var(--bronze); }
+.pin--tbc .pin-dot { background: var(--border); color: var(--muted); font-size: 0.8rem; }
+.pin:focus-visible { outline: none; }
+.pin:focus-visible .pin-dot { outline: 2px solid var(--brass); outline-offset: 5px; }
+.legend {
+  display: flex; gap: 12px; padding: 8px 12px; background: rgba(11, 34, 23, 0.92); border: 1px solid var(--border);
+  border-radius: 8px; font-size: 0.75rem; color: var(--muted); pointer-events: none;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+.legend-gold { background: var(--gold); }
+.legend-silver { background: var(--silver); }
+.legend-bronze { background: var(--bronze); }
+.legend-tbc { background: var(--border); }
+.events-legend {
+  position: fixed; z-index: 998; left: calc(12px + env(safe-area-inset-left)); bottom: calc(88px + env(safe-area-inset-bottom));
+  max-width: calc(100vw - 24px); flex-wrap: wrap;
+}
+.events-scores {
+  position: fixed; z-index: 999; top: calc(72px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
+  max-width: calc(100vw - 72px); display: flex; gap: 6px; padding: 4px; overflow-x: auto; scrollbar-width: none;
+  background: rgba(11, 34, 23, 0.85); border: 1px solid var(--border); border-radius: 999px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.events-scores::-webkit-scrollbar { display: none; }
+.toggle-btn {
+  flex-shrink: 0; min-height: var(--touch); padding: 0 16px; border: 1px solid var(--border); border-radius: 999px;
+  background: transparent; color: var(--text); font: inherit; font-size: 0.875rem; font-weight: 500; white-space: nowrap; cursor: pointer;
+}
+.toggle-btn:hover { border-color: var(--brass); }
+.toggle-btn[aria-checked="true"] { background: var(--brass); border-color: var(--brass); color: var(--on-brass); font-weight: 600; }
+.toggle-btn:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+@media (min-width: 760px) { .events-scores { left: 50%; transform: translateX(-50%); } }
+@media (max-width: 420px) { .events-scores { gap: 4px; } .events-scores .toggle-btn { padding: 0 10px; font-size: 0.8125rem; } }
+.mode-button {
+  position: fixed; z-index: 1000; left: calc(12px + env(safe-area-inset-left)); bottom: calc(32px + env(safe-area-inset-bottom));
+  min-width: 96px; min-height: 48px; padding: 0 20px; border-radius: 999px;
+  border: 1px solid var(--brass); background: rgba(14, 42, 30, 0.95); color: var(--text);
+  font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.mode-button:hover { background: var(--panel); color: var(--brass); }
+.mode-button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
+.mode-button[aria-pressed="true"] { background: var(--brass); color: var(--on-brass); }
+.recos-page .recos-float { bottom: calc(96px + env(safe-area-inset-bottom)); }
+.dinner-popup .dinner-when { display: flex; align-items: center; gap: 8px; margin: 0; }
+.dinner-ratings { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 4px 0 0; font-size: 0.9rem; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

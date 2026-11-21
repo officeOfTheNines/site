@@ -114,7 +114,8 @@
       list: 'activity-list', more: 'activity-more', loading: 'activity-loading', empty: 'activity-empty', error: 'activity-error',
       mine: false,
       fetch: function (limit, before) {
-        return N.client.rpc('activity_feed', { p_scope: scope, p_limit: limit, p_before: before });
+        var club = window.NinesClubSwitch ? window.NinesClubSwitch.get().club_id : null;
+        return N.client.rpc('activity_feed', { p_scope: scope, p_limit: limit, p_before: before, p_club: club });
       }
     });
     window.NinesScope.toggle(document.getElementById('activity-scope'), userId, function (value) {
@@ -122,6 +123,8 @@
       feed.load(true);
     });
     feed.load(true);
+    // "My clubs" follows the member's current club
+    if (window.NinesClubSwitch) window.NinesClubSwitch.onChange(function () { feed.load(true); });
 
     var mineSection = document.getElementById('my-activity-section');
     if (access.profile && mineSection) {

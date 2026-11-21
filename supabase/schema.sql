@@ -1575,67 +1575,6 @@ $$;
 -- ---------------------------------------------------------------------------
 -- The home feed
 -- ---------------------------------------------------------------------------
-create or replace function public.activity_feed(
-  p_scope  text        default 'my_clubs',
-  p_limit  integer     default 20,
-  p_before timestamptz default null
-)
-returns table (
-  event_type   text,         -- 'reco_added' or 'comment_added'
-  created_at   timestamptz,
-  comment_id   uuid,
-  venue_id     uuid,         -- the reco (restaurant) to open on the map
-  venue_name   text,
-  area         text,
-  author_label text,         -- "First L."
-  club_name    text,         -- the club the author posted as
-  stars        smallint,     -- not stored yet: always null
-  price_level  smallint,     -- not stored yet: always null
-  snippet      text,         -- the comment, cut to about 140 characters
-  image_path   text          -- reserved for photos: always null for now
-)
-language plpgsql
-stable
-security invoker
-set search_path = ''
-as $$
-#variable_conflict use_column
-begin
-  if p_scope is null or p_scope not in ('my_clubs', 'all_clubs') then
-    raise exception 'Scope must be my_clubs or all_clubs.' using errcode = '22023';
-  end if;
-  return query
-  select
-    case when exists (
-      -- an earlier comment on the same restaurant that the viewer can see (row-level security applies)
-      select 1 from public.reco_comments e
-      where e.venue_id = c.venue_id and (e.created_at, e.id) < (c.created_at, c.id)
-    ) then 'comment_added' else 'reco_added' end,
-    c.created_at,
-    c.id,
-    p.id,
-    p.name,
-    public.reco_area(p.address),
-    f.author_label,
-    cl.name,
-    null::smallint,
-    null::smallint,
-    case when char_length(c.body) > 140 then rtrim(left(c.body, 139)) || '…' else c.body end,
-    null::text
-  from public.reco_comments c
-  cross join lateral public.reco_comment_facts(c.id) f
-  join public.venues p on p.id = c.venue_id
-  left join public.clubs cl on cl.id = c.club_id
-  where public.has_any_access()
-    and (p_before is null or c.created_at < p_before)
-    and not f.is_mine
-    and c.visibility <> 'me'
-    and (c.visibility <> 'club' or public.is_member(c.club_id))
-    and (f.shares_club or (p_scope = 'all_clubs' and c.visibility = 'everyone'))
-  order by c.created_at desc, c.id desc
-  limit least(greatest(coalesce(p_limit, 20), 1), 50);
-end;
-$$;
 
 -- ---------------------------------------------------------------------------
 -- The member's own recos and comments (home page, "My activity"). Not affected by the scope.
@@ -1720,12 +1659,10 @@ $$;
 -- ---------------------------------------------------------------------------
 revoke execute on function public.reco_comment_facts(uuid)                          from public, anon;
 revoke execute on function public.reco_area(text)                                   from public, anon;
-revoke execute on function public.activity_feed(text, integer, timestamptz)         from public, anon;
 revoke execute on function public.my_reco_activity(integer, timestamptz)            from public, anon;
 revoke execute on function public.reco_scope_venue_ids(text)                        from public, anon;
 grant execute on function public.reco_comment_facts(uuid)                           to authenticated;
 grant execute on function public.reco_area(text)                                    to authenticated;
-grant execute on function public.activity_feed(text, integer, timestamptz)          to authenticated;
 grant execute on function public.my_reco_activity(integer, timestamptz)             to authenticated;
 grant execute on function public.reco_scope_venue_ids(text)                         to authenticated;
 
@@ -2280,5 +2217,157 @@ alter role claude_reader set default_transaction_read_only = on;
 alter role claude_reader set statement_timeout = '15s';
 grant usage on schema public to claude_reader;
 grant select on table public.v_event_answers_for_claude to claude_reader;
+
+-- ---------------------------------------------------------------------------
+-- Club dinners on the Recos map; the feed following the current club (see migrations/012_events_map.sql)
+-- ---------------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------------
+-- The club's dinners for the map
+-- ---------------------------------------------------------------------------
+create or replace function public.club_dinner_map(p_club integer)
+returns table (
+  event_id      uuid,
+  venue_id      uuid,
+  venue_name    text,
+  address       text,
+  lat           double precision,
+  lng           double precision,
+  event_date    date,
+  season        text,
+  month         text,
+  brigadiers    jsonb,          -- display names: as stored on the dinner, else the brigadier group's members
+  rating_food   numeric,        -- the dinner maps' "plate"
+  rating_wine   numeric,        -- "bottles"
+  rating_vibe   numeric,        -- "atmosphere"
+  overall       numeric,        -- average of the ratings present (null when none)
+  menu_url      text,           -- an https link, or a path in the private menus bucket
+  rating_scale  smallint        -- the club's scale: 10 for The Nines, 20 for Les Ronds
+)
+language plpgsql
+stable
+security definer
+set search_path = ''
+as $$
+#variable_conflict use_column
+declare
+  today date;
+begin
+  if not public.is_member(p_club) then
+    return;   -- not a member of that club (club_access): nothing
+  end if;
+  select (now() at time zone c.timezone)::date into today from public.clubs c where c.id = p_club;
+  return query
+  select e.id, v.id, v.name, v.address, v.lat, v.lng, e.event_date, e.season, e.month,
+         case when jsonb_array_length(e.brigadiers) > 0 or e.brigadier_group_id is null then e.brigadiers
+              else coalesce((select jsonb_agg(p.display_name order by p.display_name)
+                             from public.brigadier_group_members m join public.profiles p on p.id = m.profile_id
+                             where m.group_id = e.brigadier_group_id), '[]'::jsonb) end,
+         e.rating_food, e.rating_wine, e.rating_vibe,
+         round((coalesce(e.rating_food, 0) + coalesce(e.rating_wine, 0) + coalesce(e.rating_vibe, 0))
+               / nullif((e.rating_food is not null)::int + (e.rating_wine is not null)::int + (e.rating_vibe is not null)::int, 0), 2),
+         e.menu_url, c.rating_scale
+  from public.club_events e
+  join public.venues v on v.id = e.venue_id
+  join public.clubs c on c.id = e.club_id
+  where e.club_id = p_club
+    and not (e.event_date > today and e.rsvp_status = 'not_open')
+  order by e.event_date desc, e.created_at desc;
+end;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Feed: "My clubs" can follow the member's current club
+-- ---------------------------------------------------------------------------
+
+-- Is the author of this comment (which the caller can see) a member of that club?
+create or replace function public.reco_comment_author_in_club(p_comment uuid, p_club integer)
+returns boolean
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select exists (
+    select 1 from public.reco_comments c
+    join public.profiles pr on pr.id = c.profile_id
+    join public.club_access a on a.email = pr.email and a.club_id = p_club
+    where c.id = p_comment
+      and public.can_see_reco_comment(c.visibility, c.club_id, c.profile_id)
+  );
+$$;
+
+create or replace function public.activity_feed(
+  p_scope  text        default 'my_clubs',
+  p_limit  integer     default 20,
+  p_before timestamptz default null,
+  p_club   integer     default null   -- the member's current club: "My clubs" = members of this club
+)
+returns table (
+  event_type   text,
+  created_at   timestamptz,
+  comment_id   uuid,
+  venue_id     uuid,
+  venue_name   text,
+  area         text,
+  author_label text,
+  club_name    text,
+  stars        smallint,
+  price_level  smallint,
+  snippet      text,
+  image_path   text
+)
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+#variable_conflict use_column
+begin
+  if p_scope is null or p_scope not in ('my_clubs', 'all_clubs') then
+    raise exception 'Scope must be my_clubs or all_clubs.' using errcode = '22023';
+  end if;
+  if p_club is not null and not public.is_member(p_club) then
+    return;
+  end if;
+  return query
+  select
+    case when exists (
+      select 1 from public.reco_comments e
+      where e.venue_id = c.venue_id and (e.created_at, e.id) < (c.created_at, c.id)
+    ) then 'comment_added' else 'reco_added' end,
+    c.created_at,
+    c.id,
+    p.id,
+    p.name,
+    public.reco_area(p.address),
+    f.author_label,
+    cl.name,
+    null::smallint,
+    null::smallint,
+    case when char_length(c.body) > 140 then rtrim(left(c.body, 139)) || '…' else c.body end,
+    null::text
+  from public.reco_comments c
+  cross join lateral public.reco_comment_facts(c.id) f
+  join public.venues p on p.id = c.venue_id
+  left join public.clubs cl on cl.id = c.club_id
+  where public.has_any_access()
+    and (p_before is null or c.created_at < p_before)
+    and not f.is_mine
+    and c.visibility <> 'me'
+    and (c.visibility <> 'club' or public.is_member(c.club_id))
+    and (case when p_club is null then f.shares_club else public.reco_comment_author_in_club(c.id, p_club) end
+         or (p_scope = 'all_clubs' and c.visibility = 'everyone'))
+  order by c.created_at desc, c.id desc
+  limit least(greatest(coalesce(p_limit, 20), 1), 50);
+end;
+$$;
+
+revoke execute on function public.club_dinner_map(integer)                          from public, anon;
+revoke execute on function public.reco_comment_author_in_club(uuid, integer)        from public, anon;
+revoke execute on function public.activity_feed(text, integer, timestamptz, integer) from public, anon;
+grant execute on function public.club_dinner_map(integer)                           to authenticated;
+grant execute on function public.reco_comment_author_in_club(uuid, integer)         to authenticated;
+grant execute on function public.activity_feed(text, integer, timestamptz, integer)  to authenticated;
 
 commit;
