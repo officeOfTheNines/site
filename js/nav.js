@@ -11,6 +11,7 @@
     { key: 'directory', label: 'Directory', href: 'directory.html' },
     { key: 'recos', label: 'Recos', href: 'recos.html' },
     { key: 'map', label: 'Map', href: (window.NINES_CLUB && window.NINES_CLUB.MAP_URL) || 'https://map.thenines.club', external: true },
+    { key: 'dinners', label: 'Dinners', href: 'dinners.html', adminOnly: true },
     { key: 'admin', label: 'Admin', href: 'admin.html', adminOnly: true }
   ];
 

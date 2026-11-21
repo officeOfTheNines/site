@@ -811,6 +811,40 @@ body.recos-page main { max-width: none; padding: 0; }
 .activity-snippet { margin: 6px 0 0; color: var(--text); opacity: 0.9; overflow-wrap: anywhere; }
 .small-loading { padding: 8px 0; }
 
+/* ---------- Next dinner panel (member home) and the dinners admin page ---------- */
+.dinner-panels:empty { display: none; }
+.dinner-panel { border-color: var(--brass); }
+.dinner-club { margin: 0 0 4px; font-size: 0.9rem; }
+.dinner-heading { margin: 0; }
+.dinner-date { margin: 4px 0 0; font-size: 1.15rem; font-weight: 600; }
+.dinner-venue { margin: 2px 0 0; }
+.dinner-label { margin: 16px 0 6px; font-size: 0.9rem; }
+.dinner-last { margin: 0; font-size: 1.1rem; }
+.brigadiers { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.brigadiers li { display: flex; align-items: center; gap: 10px; }
+.avatar.small { width: 56px; height: 56px; font-size: 1rem; }
+.brigadier-name { font-weight: 500; }
+.dinner-reply { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.dinner-reply p { margin: 0; flex-basis: 100%; }
+.dinner-reply .button { margin-top: 8px; }
+.dinner-note:empty { display: none; }
+.dinner-note { color: var(--brass); font-weight: 500; }
+.rsvp-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.past-row td { color: var(--muted); }
+.event-form { display: grid; grid-template-columns: 180px 1fr; gap: 16px; align-items: start; }
+.event-form .field { margin-bottom: 0; }
+.event-form .venue-field { grid-column: 1 / -1; }
+.event-form .form-end { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 16px; }
+@media (max-width: 640px) { .event-form { grid-template-columns: 1fr; } }
+input[type="date"], input[type="datetime-local"] {
+  width: 100%; height: 48px; padding: 8px 12px; font: inherit;
+  color: var(--text); background: var(--page); border: 1px solid var(--border); border-radius: var(--radius);
+  color-scheme: dark;
+}
+input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { border-color: var(--brass); outline-offset: 1px; }
+.allowlist select { width: auto; min-width: 120px; }
+.allowlist input[type="datetime-local"] { min-width: 200px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
