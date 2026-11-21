@@ -1476,7 +1476,8 @@ create table if not exists public.club_events (
     jsonb_typeof(brigadiers) = 'array'
     and not jsonb_path_exists(brigadiers, '$[*] ? (@.type() != "string")')),
   constraint club_events_ratings_positive check (coalesce(rating_wine, 0) >= 0 and coalesce(rating_food, 0) >= 0 and coalesce(rating_vibe, 0) >= 0),
-  constraint club_events_menu_url      check (menu_url is null or menu_url ~ '^https://'),
+  constraint club_events_menu_url      check (menu_url is null or menu_url ~ '^https://'
+                                              or menu_url ~ '^menus/[a-z0-9-]+/[A-Za-z0-9._-]+\.(pdf|jpe?g|png|webp|heic)$'),
   constraint club_events_text_lengths  check (char_length(coalesce(season, '')) <= 60 and char_length(coalesce(month, '')) <= 60
                                               and char_length(coalesce(notes, '')) <= 2000 and char_length(coalesce(source_ref, '')) <= 60),
   constraint club_events_source_ref_key unique (club_id, source_ref)
@@ -1721,5 +1722,40 @@ grant execute on function public.reco_area(text)                                
 grant execute on function public.activity_feed(text, integer, timestamptz)          to authenticated;
 grant execute on function public.my_reco_activity(integer, timestamptz)             to authenticated;
 grant execute on function public.reco_scope_venue_ids(text)                         to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Dinner menus: private storage bucket, one folder per club (see migrations/010_menus.sql)
+-- ---------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('menus', 'menus', false, 20971520,
+        array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'])
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+-- 'nines/1.1.pdf' -> the club whose slug is the first folder (null if none, never an error).
+create or replace function public.menu_club_from_path(p_path text)
+returns integer
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select c.id from public.clubs c
+  where p_path ~ '^[a-z0-9-]+/[A-Za-z0-9._-]+$' and c.slug = split_part(p_path, '/', 1);
+$$;
+
+drop policy if exists "menus: club members view" on storage.objects;
+create policy "menus: club members view" on storage.objects
+  for select to authenticated
+  using (
+    bucket_id = 'menus'
+    and ((select public.is_super_admin()) or public.is_member(public.menu_club_from_path(name)))
+  );
+
+revoke execute on function public.menu_club_from_path(text) from public, anon;
+grant execute on function public.menu_club_from_path(text) to authenticated;
 
 commit;

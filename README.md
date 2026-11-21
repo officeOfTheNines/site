@@ -213,6 +213,12 @@ unchanged.
   for Les Ronds); the database refuses a rating above it.
 - Nobody can read or write `club_events` from the site yet: it is filled in the SQL editor or by an import
   script. A venue used by a club event cannot be deleted, and removing its last reco keeps it.
+- **Menus** (step 10) live in the private `menus` bucket at `menus/<club slug>/<file>` (for example
+  `menus/nines/1.1.pdf`), and `club_events.menu_url` holds that path. Only members of that club and super
+  admins can open them, through links that expire; the office uploads them (Supabase dashboard,
+  **Storage → menus**, or an import script).
+- The dinners and venues from both dinner maps' Google Sheets were loaded once with a private SQL file (it
+  holds members' names, so it is not in this repo).
 - Importing a sheet row: find the venue with the same rules as Recos duplicates (same map id, or within
   about 30 m with a similar name), or create it, then add the event.
 
@@ -300,6 +306,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/010_menus.sql` | Step 10: dinner menus. A private `menus` storage bucket (PDFs and photos, up to 20 MB), one folder per club (`menus/<club slug>/<file>`); only that club's members and super admins can open them. `club_events.menu_url` also accepts such a path. Only adds things. |
 | `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` and `reco_comments.place_id` to `venue_id` (no data changes; the Recos functions that use them are re-created, and `add_reco()` / `reco_feed()` now return `venue_id`), adds `clubs.rating_scale` (10 / 20) and `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
 | `migrations/008_club_photos.sql` | Step 8: a club's own photo for someone. Adds `club_profiles.override_photo_path`, lets club photo files into the headshots bucket, and makes `directory()` show the club's photo when there is one. Only adds things. |
 | `migrations/007_recos.sql` | Step 7: Recos. Adds `reco_places` (renamed `venues` in step 9) and `reco_comments`, their security rules, and the functions `add_reco()`, `find_reco_place()` and `reco_feed()`. Only adds things; runs as one transaction. |
