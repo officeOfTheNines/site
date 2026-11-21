@@ -41,6 +41,8 @@
   var clubConfig = window.NINES_CLUB || { NAME: 'The Nines', MAP_URL: 'https://map.thenines.club' };
   brand.appendChild(make('span', null, clubConfig.NAME));
   inner.appendChild(brand);
+  // members of several clubs: the current club switch (js/club-switch.js fills it)
+  inner.appendChild(make('div', { class: 'club-switch', 'data-club-switch': true, hidden: true }));
 
   var nav = make('nav', { class: 'site-nav', 'aria-label': 'Members', 'data-state': LINK_STATES, hidden: true });
 

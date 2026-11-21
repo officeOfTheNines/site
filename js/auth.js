@@ -234,6 +234,7 @@
       node.hidden = access.role !== 'admin';
     });
     if (window.NinesNav) window.NinesNav.setClubs(access.clubs);
+    if (window.NinesClubSwitch) window.NinesClubSwitch.mount(access);
     return access;
   }
 

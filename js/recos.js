@@ -87,6 +87,15 @@
   var scopeIds = null;    // "My clubs": the ids of the places in scope (from reco_scope_venue_ids)
   var forcedId = null;    // a place opened from a link stays on the map whatever the scope
 
+  // Events mode: the current club's dinners instead of the recos (club_dinner_map)
+  var MODE_KEY = 'nines.recos.mode';
+  var mode = 'recos';            // 'recos' or 'events'
+  var dinnerVenues = [];         // [{ id, name, address, lat, lng, scale, dinners: [newest first] }]
+  var dinnerMarkers = {};        // venue id -> marker
+  var dinnerClubId = null;       // whose dinners are loaded
+  var scoreMode = 'overall';     // overall | food | wine | atmosphere
+  var monthFormat = new Intl.DateTimeFormat(N.lang === 'fr' ? 'fr-FR' : 'en-GB', { month: 'long', year: 'numeric' });
+
   var statusTimer = null;
   function showError(text) { clearTimeout(statusTimer); statusBox.textContent = ''; errorBox.textContent = text || ''; }
   function showStatus(text) {
@@ -242,12 +251,14 @@
   }
 
   function shownPlaces() {
+    if (mode === 'events') return shownVenues();
     var q = searchInput.value.trim();
     return places.filter(function (p) { return inScope(p) && (!q || matches(p, q)); });
   }
 
   // Pins: only the matching recos while a search is typed.
   function applyFilter() {
+    if (mode === 'events') { applyEventsFilter(); return; }
     var q = searchInput.value.trim();
     var shown = shownPlaces();
     places.forEach(function (p) {
@@ -284,12 +295,14 @@
       return sa - sb || collator.compare(a.name, b.name);
     }).slice(0, 8);
     if (!found.length) {
-      searchList.appendChild(el('li', { className: 'recos-search-none', text: 'No recos match.' }));
+      searchList.appendChild(el('li', { className: 'recos-search-none', text: mode === 'events' ? 'No dinners match.' : 'No recos match.' }));
     }
     found.forEach(function (p, i) {
       var li = el('li', { id: 'recos-option-' + i, role: 'option', className: 'recos-option', 'aria-selected': 'false' }, [
         el('span', { className: 'recos-option-name', 'data-no-i18n': true, text: p.name }),
-        el('span', { className: 'muted small', text: p.comments.length === 1 ? '1 reco' : p.comments.length + ' recos' })
+        el('span', { className: 'muted small', text: p.dinners
+          ? (p.dinners.length === 1 ? '1 dinner' : p.dinners.length + ' dinners')
+          : (p.comments.length === 1 ? '1 reco' : p.comments.length + ' recos') })
       ]);
       li.addEventListener('mousedown', function (e) { e.preventDefault(); }); // keep focus in the field
       li.addEventListener('click', function () { pickResult(p); });
@@ -340,6 +353,7 @@
   searchClear.addEventListener('click', clearSearch);
 
   function openPlace(id) {
+    if (mode === 'events') { openVenue(id); return; }
     var marker = markers[id];
     if (!marker) return;
     if (!map.hasLayer(marker)) {
@@ -503,7 +517,7 @@
   // name suggested (or an empty name to type), and, if the point is on or next to a reco the member
   // can see, the offer to add to that restaurant instead.
   async function addAt(latlng) {
-    if (!canAdd) return;
+    if (!canAdd || mode === 'events') return;   // no adding from the dinners view
     // a phone may send its own long-press event just after ours: ignore that repeat
     if (!addPanel.hidden && Date.now() - lastPressAt < 900) return;
     lastPressAt = Date.now();
@@ -575,6 +589,7 @@
       if (press && e.pointerId !== press.id) { cancel(); return; } // a second finger: a pinch
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.target.closest('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
+      if (mode === 'events') return;
       cancel();
       var x = e.clientX, y = e.clientY;
       press = { id: e.pointerId, x: x, y: y, timer: setTimeout(function () {
@@ -729,6 +744,200 @@
     }
   });
 
+
+  // ---- Events mode: the current club's dinners ----
+
+  var S = window.NinesDinnerScores;
+  var modeButton = document.getElementById('mode-toggle');
+  var scoresNode = document.getElementById('events-scores');
+  var legendNode = document.getElementById('events-legend');
+  var eventsEmpty = document.getElementById('events-empty');
+
+  function readMode() {
+    try { return window.localStorage.getItem(MODE_KEY) === 'events' ? 'events' : 'recos'; } catch (e) { return 'recos'; }
+  }
+  function saveMode(m) {
+    try { window.localStorage.setItem(MODE_KEY, m); } catch (e) { /* not remembered */ }
+  }
+  function currentClubId() {
+    return window.NinesClubSwitch ? window.NinesClubSwitch.get().club_id : homeClub.id;
+  }
+
+  async function loadDinners() {
+    var club = currentClubId();
+    var result = await client.rpc('club_dinner_map', { p_club: club });
+    if (result.error) throw result.error;
+    var byVenue = {};
+    dinnerVenues = [];
+    (result.data || []).forEach(function (d) {
+      var v = byVenue[d.venue_id];
+      if (!v) {
+        v = byVenue[d.venue_id] = { id: d.venue_id, name: d.venue_name, address: d.address, lat: d.lat, lng: d.lng,
+                                    scale: d.rating_scale || 10, dinners: [] };
+        dinnerVenues.push(v);
+      }
+      v.dinners.push(d);
+    });
+    dinnerVenues.forEach(function (v) {
+      v.dinners.sort(function (a, b) { return String(b.event_date).localeCompare(String(a.event_date)); });
+    });
+    dinnerVenues.sort(function (a, b) { return collator.compare(a.name, b.name); });
+    dinnerClubId = club;
+    drawDinners();
+  }
+
+  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated).
+  function drawDinners() {
+    Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
+    dinnerMarkers = {};
+    dinnerVenues.forEach(function (v) {
+      var score = S.scoreOf(v.dinners[0], scoreMode);
+      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale));
+      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale), title: label, alt: label, keyboard: true });
+      marker.bindPopup(function () { return venuePopup(v); }, { maxWidth: 320, autoPanPaddingTopLeft: [16, 140], autoPanPaddingBottomRight: [16, 96] });
+      dinnerMarkers[v.id] = marker;
+    });
+    S.legend(legendNode, dinnerVenues.length ? dinnerVenues[0].scale : 10);
+    applyEventsFilter();
+  }
+
+  function shownVenues() {
+    var q = searchInput.value.trim();
+    return dinnerVenues.filter(function (v) { return !q || matches(v, q); });
+  }
+
+  function applyEventsFilter() {
+    Object.keys(markers).forEach(function (id) { if (map.hasLayer(markers[id])) markers[id].remove(); });
+    var shown = shownVenues();
+    dinnerVenues.forEach(function (v) {
+      var m = dinnerMarkers[v.id], on = shown.indexOf(v) !== -1;
+      if (on && !map.hasLayer(m)) m.addTo(map);
+      if (!on && map.hasLayer(m)) m.remove();
+    });
+    searchClear.hidden = !searchInput.value;
+    emptyNode.hidden = true;
+    scopeEmptyNode.hidden = true;
+    eventsEmpty.hidden = dinnerVenues.length > 0;
+    var q = searchInput.value.trim();
+    countNode.textContent = q
+      ? (shown.length === 1 ? '1 restaurant matches' : shown.length + ' restaurants match')
+      : (dinnerVenues.length === 1 ? '1 restaurant' : dinnerVenues.length + ' restaurants');
+  }
+
+  function openVenue(id) {
+    var marker = dinnerMarkers[id];
+    if (!marker) return;
+    if (!map.hasLayer(marker)) { searchInput.value = ''; applyEventsFilter(); }
+    map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
+    marker.openPopup();
+  }
+
+  function fitDinners() {
+    if (dinnerVenues.length) {
+      map.fitBounds(L.latLngBounds(dinnerVenues.map(function (v) { return [v.lat, v.lng]; })), { padding: [48, 48], maxZoom: 15 });
+    }
+  }
+
+  // Dinners loaded from the old sheets only know their month: show "November 2026" for those.
+  function dinnerWhen(d) {
+    var p = String(d.event_date).split('-').map(Number);
+    return (d.month ? monthFormat : dateFormat).format(new Date(p[0], p[1] - 1, p[2]));
+  }
+
+  async function openMenu(url) {
+    if (/^https:\/\//.test(url)) { window.open(url, '_blank', 'noopener'); return; }
+    var tab = window.open('', '_blank');   // opened now, so the browser does not block it
+    var result = await client.storage.from('menus').createSignedUrl(url.replace(/^menus\//, ''), 300);
+    if (result.error || !result.data || !result.data.signedUrl) {
+      if (tab) tab.close();
+      showError('Could not open the menu. ' + N.friendlyError(result.error));
+      return;
+    }
+    if (tab) { tab.opener = null; tab.location = result.data.signedUrl; }
+    else window.location.assign(result.data.signedUrl);
+  }
+
+  function venuePopup(v) {
+    var box = el('div', { className: 'reco-popup dinner-popup' }, [
+      el('h3', { className: 'reco-place-name', 'data-no-i18n': true, text: v.name })
+    ]);
+    if (v.address) box.appendChild(el('p', { className: 'muted small', 'data-no-i18n': true, text: v.address }));
+    var list = el('ul', { className: 'reco-lines' });
+    v.dinners.forEach(function (d) {
+      var li = el('li', { className: 'reco-line dinner-line' });
+      li.appendChild(el('p', { className: 'dinner-when' }, [
+        el('strong', { 'data-no-i18n': true, text: dinnerWhen(d) }),
+        d.season ? el('span', { className: 'card-label', 'data-no-i18n': true, text: d.season }) : null
+      ]));
+      if (d.brigadiers && d.brigadiers.length) {
+        li.appendChild(el('p', { className: 'muted small', 'data-no-i18n': true, text: d.brigadiers.join(', ') }));
+      }
+      var ratings = S.MODES.map(function (m) {
+        var value = S.scoreOf(d, m.key);
+        return value === null ? null : el('span', { className: 'dinner-rating' }, [
+          el('span', { text: m.label }), document.createTextNode(' '),
+          el('strong', { 'data-no-i18n': true, text: S.withScale(value, v.scale) })
+        ]);
+      }).filter(Boolean);
+      li.appendChild(ratings.length ? el('p', { className: 'dinner-ratings' }, ratings) : el('p', { className: 'muted small', text: 'Not rated' }));
+      if (d.menu_url) {
+        var menu = el('button', { type: 'button', className: 'button link', text: 'Menu' });
+        menu.addEventListener('click', function () { openMenu(d.menu_url); });
+        li.appendChild(menu);
+      }
+      list.appendChild(li);
+    });
+    box.appendChild(list);
+    return box;
+  }
+
+  function buildScoreButtons() {
+    scoresNode.replaceChildren();
+    S.MODES.forEach(function (m) {
+      var b = el('button', { type: 'button', role: 'radio', className: 'toggle-btn', 'aria-checked': String(m.key === scoreMode), text: m.label });
+      b.addEventListener('click', function () {
+        scoreMode = m.key;
+        scoresNode.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-checked', String(x === b)); });
+        map.closePopup();
+        drawDinners();
+      });
+      scoresNode.appendChild(b);
+    });
+  }
+
+  // Switch between the recos and the dinners. The map keeps its position and zoom.
+  async function setMode(next, fit) {
+    mode = next;
+    saveMode(next);
+    var ev = next === 'events';
+    modeButton.textContent = ev ? 'Recos' : 'Events';
+    modeButton.setAttribute('aria-pressed', String(ev));
+    addOpen.hidden = ev || !canAdd;
+    document.getElementById('recos-scope').hidden = ev;   // My clubs / All clubs: Recos only
+    scoresNode.hidden = !ev;
+    legendNode.hidden = !ev;
+    searchInput.placeholder = ev ? 'Search dinners' : 'Search recos';
+    map.closePopup();
+    closeResults();
+    if (ev) {
+      tipNode.hidden = true;
+      if (!addPanel.hidden) closeAdd();
+      if (dinnerClubId !== currentClubId()) {
+        try { await loadDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); return; }
+        if (fit) fitDinners();
+      } else {
+        applyEventsFilter();
+      }
+    } else {
+      Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
+      eventsEmpty.hidden = true;
+      applyFilter();
+    }
+    if (searchInput.value.trim()) showResults();
+  }
+
+  modeButton.addEventListener('click', function () { setMode(mode === 'events' ? 'recos' : 'events', false); });
+
   // ---- Start ----
 
   N.guardMembersPage().then(function (access) {
@@ -773,9 +982,22 @@
     setUpLongPress();
     updateVisibilityText();
     updateCount();
-    showTip();
+    buildScoreButtons();
     // opened from the home feed: recos.html?venue=<id> centres that reco with its card open
     var linked = new URLSearchParams(window.location.search).get('venue');
-    refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null);
+    var startMode = linked ? 'recos' : readMode();
+    if (startMode === 'recos') showTip();
+    refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null).then(function () {
+      if (startMode === 'events') setMode('events', true);
+      else saveMode('recos');
+    });
+    // the current club (members of several clubs): its dinners, legend and scale, in place
+    if (window.NinesClubSwitch) {
+      window.NinesClubSwitch.onChange(async function () {
+        if (mode !== 'events') { dinnerClubId = null; return; }
+        map.closePopup();
+        try { await loadDinners(); fitDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); }
+      });
+    }
   });
 })();

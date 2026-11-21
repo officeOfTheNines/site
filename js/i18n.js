@@ -283,6 +283,17 @@
     'Add my reco to it': 'Ajouter ma reco à ce restaurant',
     'Filter by name': 'Filtrer par nom',
     'Skip to the search': 'Aller à la recherche',
+    // Events on the Recos map, club switch
+    'Events': 'Dîners',
+    'Search dinners': 'Chercher un dîner',
+    'Colour the dinners by': 'Couleur des dîners selon',
+    'Overall': 'Global',
+    'Food': 'Cuisine',
+    'Wine': 'Vin',
+    'Vibe': 'Ambiance',
+    'Not rated': 'Pas noté',
+    'No dinners match.': 'Aucun dîner ne correspond.',
+    'No dinners on the map for this club yet.': 'Aucun dîner sur la carte pour ce club pour l’instant.',
     // Dinners and replies
     'Next dinner': 'Prochain dîner',
     'Venue to be announced': 'Lieu à venir',
@@ -457,6 +468,12 @@
     [/^Remove (.+) from the club$/, 'Retirer $1 du club'],
     [/^Edit group (\d+): (.+)$/, 'Modifier le groupe $1 : $2'],
     [/^Delete group (\d+): (.+)$/, 'Supprimer le groupe $1 : $2'],
+    [/^(\d+) dinners?$/, function (m) { return m[1] + (m[1] === '1' ? ' dîner' : ' dîners'); }],
+    [/^Under (.+)$/, 'Moins de $1'],
+    [/^Current club: (.+)\. Change club$/, 'Club actuel : $1. Changer de club'],
+    [/^Could not (load the dinners|open the menu)\. (.+)$/, function (m, t) {
+      return (m[1] === 'load the dinners' ? 'Impossible de charger les dîners.' : 'Impossible d’ouvrir le menu.') + ' ' + t(m[2]);
+    }],
     [/^You can change this until (\d{1,2}:\d{2})$/, 'Vous pouvez la modifier jusqu’à $1'],
     [/^(\d+) attending · (\d+) not attending · (\d+) no answer yet$/, '$1 présent(s) · $2 absent(s) · $3 sans réponse'],
     [/^(\d+) attending · (\d+) not attending$/, '$1 présent(s) · $2 absent(s)'],

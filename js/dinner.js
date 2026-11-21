@@ -1,4 +1,4 @@
-// Next dinner panel on the member home (members/index.html), one per club the member belongs to.
+// Next dinner panel on the member home (members/index.html), for the member's current club.
 // Everything comes from home_dinner_panel(club) and every reply goes through rsvp_answer(): the
 // database decides what a member may see and when they may still change their reply. This file only
 // shows it. Dinners have no time: only their date is shown.
@@ -126,14 +126,19 @@
     box = document.getElementById('dinner-panels');
     dialog = document.getElementById('rsvp-dialog');
     if (!box || !dialog) return; // an older cached page
-    // every club the member belongs to; this site's club first
-    var home = N.pickClub(access, false);
-    clubs = (access.clubs || []).filter(function (c) { return c.role; })
-      .sort(function (a, b) { return (b.club_id === home.id) - (a.club_id === home.id); });
-    clubs.forEach(function (club) {
+    // the member's current club (js/club-switch.js; members of one club: their club)
+    clubs = (access.clubs || []).filter(function (c) { return c.role; });
+    var sw = window.NinesClubSwitch;
+    function show() {
+      var wanted = sw ? sw.get().club_id : N.pickClub(access, false).id;
+      var club = clubs.find(function (c) { return c.club_id === wanted; }) || clubs[0];
+      box.replaceChildren();
+      if (!club) return;
       box.appendChild(el('div', { 'data-club': String(club.club_id) }));
       refreshClub(club);
-    });
+    }
+    show();
+    if (sw) sw.onChange(show);
   }
 
   window.NinesDinner = { start: start };

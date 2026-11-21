@@ -33,6 +33,8 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/club-switch.js` | The current club, for members of more than one club: a small switch in the top bar of every members page. |
+| `js/dinner-scores.js` | Dinner pins, colour tiers, legend and score buttons, ported from the club dinner maps, for the Events view. |
 | `js/dinner.js`, `js/dinners.js` | The "Next dinner" panel on the member home, and the Dinners admin page. |
 | `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
@@ -241,6 +243,24 @@ unchanged.
   reply; club admins read their club's. `admin_set_answer()` sets, forces or clears a reply; a reply set by an
   admin is locked for the member.
 
+#### Events on the Recos map, and the current club (step 12)
+
+- **Events**: a button at the bottom left of the Recos map swaps the reco pins for the dinners of the member's
+  current club (and back: the button then reads "Recos"). The map keeps its position and zoom; the choice is
+  remembered in the browser. One pin per restaurant, coloured by the most recent dinner's score with the dinner
+  maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
+  grey "Not rated" when it has no score. Buttons: Overall (as on the dinner maps: food counts double,
+  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup lists every dinner there: date, season, brigadiers, scores out of the club's scale, and
+  a Menu link (private menus open through a link that expires). In Events the + button and long-press are
+  off, and My clubs / All clubs (Recos only) is hidden.
+- Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies
+  are not open stay hidden, and so do dinners without a venue.
+- **Current club**: members of more than one club get a switch in the top bar (the club's name). It sets one
+  shared current club, remembered in the browser and starting with the club of the site they are on, used
+  by the home page's dinner panel, its My clubs feed, and the Events view (all refresh in place). On pages
+  about one club (directory, profile, admin, dinners), switching opens that page for the chosen club.
+  Members of one club see no switch.
+
 #### Claude's read access to replies (optional)
 
 Migration 011 creates a view, `v_event_answers_for_claude` (dinner date, club, venue, member name, answer, last
@@ -339,6 +359,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/012_events_map.sql` | Step 12: `club_dinner_map(club)` for the Events view on the Recos map, and `activity_feed()` gets an optional current club for "My clubs". Functions only; no table or data changes. |
 | `migrations/011_dinner_calendar.sql` | Step 11: dinner calendar and replies. `club_events` gets `brigadier_group_id`, `rsvp_status` (not_open / open / closed) and `rsvp_deadline`, and its venue becomes optional; `clubs` gets `timezone`; new table `club_event_answers`; functions `rsvp_answer()`, `home_dinner_panel()`, `admin_set_answer()`, `admin_event_answers()`, `admin_save_event()`, `admin_set_rsvp_status()`, `admin_set_rsvp_deadline()`, `admin_club_events()`, `admin_venue_options()`, `admin_brigadier_group_options()`; the read-only view and role for Claude. Nothing deleted; past dinners unchanged. |
 | `migrations/010_menus.sql` | Step 10: dinner menus. A private `menus` storage bucket (PDFs and photos, up to 20 MB), one folder per club (`menus/<club slug>/<file>`); only that club's members and super admins can open them. `club_events.menu_url` also accepts such a path. Only adds things. |
 | `migrations/009_activity_feed.sql` | Step 9: renames `reco_places` to `venues` and `reco_comments.place_id` to `venue_id` (no data changes; the Recos functions that use them are re-created, and `add_reco()` / `reco_feed()` now return `venue_id`), adds `clubs.rating_scale` (10 / 20) and `club_events` (club dinners, empty for now), and the home page's activity feed: `activity_feed()`, `my_reco_activity()`, `reco_scope_place_ids()` (the map's "My clubs" view), two helpers and four indexes. Existing Recos permissions unchanged. |
@@ -603,6 +624,16 @@ running `007_recos.sql`. Use members of different clubs, one of them not a super
 - [ ] **Edit and delete rights.** Only your own lines show **Edit**. Club admins see **Delete** on lines
   posted as their club; super admins on every line.
 - [ ] **Not signed in sees nothing** (see the anon checks below, including `reco_feed`).
+
+#### Step 12: Events on the Recos map, current club
+
+Ran: the functions on a local copy with both clubs' dinners, and the pages in Chromium with a fake server
+(desktop, 375 px and 320 px phones, French). To do: live, after running `012_events_map.sql`.
+
+- [ ] **Events shows the club's dinners, coloured like the dinner map; Recos brings the recos back, same view.**
+- [ ] **A pin's popup lists every dinner at that restaurant; Menu opens the menu.**
+- [ ] **A member of both clubs switches club in the top bar: the Events pins, legend and the home panel follow.**
+- [ ] **A member of one club sees no switch.**
 
 #### Step 11: dinner calendar and replies
 
