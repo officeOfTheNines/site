@@ -290,7 +290,7 @@
     'Overall': 'Global',
     'Food': 'Cuisine',
     'Wine': 'Vin',
-    'Atmosphere': 'Ambiance',
+    'Vibe': 'Ambiance',
     'Not rated': 'Pas noté',
     'No dinners match.': 'Aucun dîner ne correspond.',
     'No dinners on the map for this club yet.': 'Aucun dîner sur la carte pour ce club pour l’instant.',

@@ -249,8 +249,8 @@ unchanged.
   current club (and back: the button then reads "Recos"). The map keeps its position and zoom; the choice is
   remembered in the browser. One pin per restaurant, coloured by the most recent dinner's score with the dinner
   maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
-  grey "Not rated" when it has no score. Buttons: Overall (the average of the ratings present), Food, Wine,
-  Atmosphere. The popup lists every dinner there: date, season, brigadiers, scores out of the club's scale, and
+  grey "Not rated" when it has no score. Buttons: Overall (as on the dinner maps: food counts double,
+  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup lists every dinner there: date, season, brigadiers, scores out of the club's scale, and
   a Menu link (private menus open through a link that expires). In Events the + button and long-press are
   off, and My clubs / All clubs (Recos only) is hidden.
 - Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies

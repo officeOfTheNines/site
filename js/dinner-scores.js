@@ -2,7 +2,8 @@
 // maps (map.thenines.club, ronds.thenines.club) so the Events view on the Recos map looks the same.
 // Main map rules kept: gold from 7.5, silver from 6.5, bronze below (out of 10); Les Ronds' map uses
 // 15 and 13 out of 20, which is the same once scores are scaled by the club's rating_scale.
-// Columns: rating_food = plate, rating_wine = bottles, rating_vibe = atmosphere.
+// Columns: rating_food = plate, rating_wine = bottles, rating_vibe = atmosphere ("Vibe", as on the maps).
+// Overall comes from the database with the maps' formula: (2 x food + wine + vibe) / 4, all three needed.
 (function () {
   'use strict';
 
@@ -10,7 +11,7 @@
     { key: 'overall', label: 'Overall' },
     { key: 'food', label: 'Food' },
     { key: 'wine', label: 'Wine' },
-    { key: 'atmosphere', label: 'Atmosphere' }
+    { key: 'atmosphere', label: 'Vibe' }
   ];
   var COLUMN = { overall: 'overall', food: 'rating_food', wine: 'rating_wine', atmosphere: 'rating_vibe' };
   var GOLD = 7.5, SILVER = 6.5;   // out of 10, as on the main map

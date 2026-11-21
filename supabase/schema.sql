@@ -2240,7 +2240,7 @@ returns table (
   rating_food   numeric,        -- the dinner maps' "plate"
   rating_wine   numeric,        -- "bottles"
   rating_vibe   numeric,        -- "atmosphere"
-  overall       numeric,        -- average of the ratings present (null when none)
+  overall       numeric,        -- as on the dinner maps: (2 x food + wine + vibe) / 4, needs all three
   menu_url      text,           -- an https link, or a path in the private menus bucket
   rating_scale  smallint        -- the club's scale: 10 for The Nines, 20 for Les Ronds
 )
@@ -2264,8 +2264,7 @@ begin
                              from public.brigadier_group_members m join public.profiles p on p.id = m.profile_id
                              where m.group_id = e.brigadier_group_id), '[]'::jsonb) end,
          e.rating_food, e.rating_wine, e.rating_vibe,
-         round((coalesce(e.rating_food, 0) + coalesce(e.rating_wine, 0) + coalesce(e.rating_vibe, 0))
-               / nullif((e.rating_food is not null)::int + (e.rating_wine is not null)::int + (e.rating_vibe is not null)::int, 0), 2),
+         round((2 * e.rating_food + e.rating_wine + e.rating_vibe) / 4, 2),   -- null unless all three are set
          e.menu_url, c.rating_scale
   from public.club_events e
   join public.venues v on v.id = e.venue_id
