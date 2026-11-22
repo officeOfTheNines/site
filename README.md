@@ -250,8 +250,10 @@ unchanged.
   remembered in the browser. One pin per restaurant, coloured by the most recent dinner's score with the dinner
   maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
   grey "Not rated" when it has no score. Buttons: Overall (as on the dinner maps: food counts double,
-  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup lists every dinner there: date, season, brigadiers, scores out of the club's scale, and
-  a Menu link (private menus open through a link that expires). In Events the + button and long-press are
+  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected
+  score (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu
+  (private menus open through a link that expires); earlier dinners at the same place are listed below.
+  The colour legend sits at the bottom right. In Events the + button and long-press are
   off, and My clubs / All clubs (Recos only) is hidden.
 - Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies
   are not open stay hidden, and so do dinners without a venue.
@@ -359,6 +361,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/013_dinner_map_ref.sql` | Step 13: `club_dinner_map()` also returns each dinner's sheet id, shown as "#1.2" on the Events card. One function replaced; no table or data changes. |
 | `migrations/012_events_map.sql` | Step 12: `club_dinner_map(club)` for the Events view on the Recos map, and `activity_feed()` gets an optional current club for "My clubs". Functions only; no table or data changes. |
 | `migrations/011_dinner_calendar.sql` | Step 11: dinner calendar and replies. `club_events` gets `brigadier_group_id`, `rsvp_status` (not_open / open / closed) and `rsvp_deadline`, and its venue becomes optional; `clubs` gets `timezone`; new table `club_event_answers`; functions `rsvp_answer()`, `home_dinner_panel()`, `admin_set_answer()`, `admin_event_answers()`, `admin_save_event()`, `admin_set_rsvp_status()`, `admin_set_rsvp_deadline()`, `admin_club_events()`, `admin_venue_options()`, `admin_brigadier_group_options()`; the read-only view and role for Claude. Nothing deleted; past dinners unchanged. |
 | `migrations/010_menus.sql` | Step 10: dinner menus. A private `menus` storage bucket (PDFs and photos, up to 20 MB), one folder per club (`menus/<club slug>/<file>`); only that club's members and super admins can open them. `club_events.menu_url` also accepts such a path. Only adds things. |

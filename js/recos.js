@@ -94,7 +94,6 @@
   var dinnerMarkers = {};        // venue id -> marker
   var dinnerClubId = null;       // whose dinners are loaded
   var scoreMode = 'overall';     // overall | food | wine | atmosphere
-  var monthFormat = new Intl.DateTimeFormat(N.lang === 'fr' ? 'fr-FR' : 'en-GB', { month: 'long', year: 'numeric' });
 
   var statusTimer = null;
   function showError(text) { clearTimeout(statusTimer); statusBox.textContent = ''; errorBox.textContent = text || ''; }
@@ -794,7 +793,11 @@
       var score = S.scoreOf(v.dinners[0], scoreMode);
       var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale));
       var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale), title: label, alt: label, keyboard: true });
-      marker.bindPopup(function () { return venuePopup(v); }, { maxWidth: 320, autoPanPaddingTopLeft: [16, 140], autoPanPaddingBottomRight: [16, 96] });
+      marker.bindPopup(function () { return venuePopup(v); }, {
+        className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
+        maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
+        autoPanPaddingTopLeft: [16, 140], autoPanPaddingBottomRight: [16, 96]
+      });
       dinnerMarkers[v.id] = marker;
     });
     S.legend(legendNode, dinnerVenues.length ? dinnerVenues[0].scale : 10);
@@ -838,12 +841,6 @@
     }
   }
 
-  // Dinners loaded from the old sheets only know their month: show "November 2026" for those.
-  function dinnerWhen(d) {
-    var p = String(d.event_date).split('-').map(Number);
-    return (d.month ? monthFormat : dateFormat).format(new Date(p[0], p[1] - 1, p[2]));
-  }
-
   async function openMenu(url) {
     if (/^https:\/\//.test(url)) { window.open(url, '_blank', 'noopener'); return; }
     var tab = window.open('', '_blank');   // opened now, so the browser does not block it
@@ -857,37 +854,86 @@
     else window.location.assign(result.data.signedUrl);
   }
 
-  function venuePopup(v) {
-    var box = el('div', { className: 'reco-popup dinner-popup' }, [
-      el('h3', { className: 'reco-place-name', 'data-no-i18n': true, text: v.name })
+  // ---- The dinner card, as on the dinner maps (season · month · number, name, address, brigadiers,
+  // the selected score, Plate / Bottles / Atmosphere bars, View menu) ----
+
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // "Jean-Baptiste Solanet" -> "Jean-Baptiste S." (first name + family-name initial, skipping "de", "van")
+  function shortName(full) {
+    var parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length < 2) return parts[0] || '';
+    for (var i = 1; i < parts.length; i++) {
+      var c = parts[i].charAt(0);
+      if (c !== c.toLowerCase()) return parts[0] + ' ' + c.toUpperCase() + '.';
+    }
+    return parts[0] + ' ' + parts[parts.length - 1].charAt(0).toUpperCase() + '.';
+  }
+  function joinNames(list) {
+    list = list.filter(Boolean);
+    return list.length <= 1 ? list.join('') : list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
+  }
+  function eyebrowOf(d) {
+    var month = d.month || (MONTHS[Number(String(d.event_date).slice(5, 7)) - 1] + '-' + String(d.event_date).slice(2, 4));
+    var number = d.source_ref ? (String(d.source_ref).match(/#\S+$/) || [])[0] : null;
+    return [d.season, month, number].filter(Boolean).join(' · ');
+  }
+  function scoreBar(label, value, scale) {
+    var n = value === null || value === undefined ? null : Number(value);
+    var fill = el('span', { className: 'dc-bar-fill' });
+    fill.style.width = (n === null ? 0 : Math.max(0, Math.min(100, n / scale * 100))).toFixed(0) + '%';  // CSSOM: allowed by the page's policy
+    return el('div', { className: 'dc-bar' }, [
+      el('span', { className: 'dc-bar-label', text: label }),
+      el('span', { className: 'dc-bar-track' }, [fill]),
+      el('span', { className: 'dc-bar-value', 'data-no-i18n': true, text: n === null ? '—' : n.toFixed(2) })
     ]);
-    if (v.address) box.appendChild(el('p', { className: 'muted small', 'data-no-i18n': true, text: v.address }));
-    var list = el('ul', { className: 'reco-lines' });
-    v.dinners.forEach(function (d) {
-      var li = el('li', { className: 'reco-line dinner-line' });
-      li.appendChild(el('p', { className: 'dinner-when' }, [
-        el('strong', { 'data-no-i18n': true, text: dinnerWhen(d) }),
-        d.season ? el('span', { className: 'card-label', 'data-no-i18n': true, text: d.season }) : null
+  }
+
+  function dinnerCard(d, v, first) {
+    var card = el('section', { className: 'dinner-card' + (first ? '' : ' dinner-card-earlier') });
+    card.appendChild(el('p', { className: 'dc-eyebrow', 'data-no-i18n': true, text: eyebrowOf(d) }));
+    if (first) {
+      card.appendChild(el('h3', { className: 'dc-name', 'data-no-i18n': true, text: v.name }));
+      if (v.address) card.appendChild(el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }));
+    }
+    if (d.brigadiers && d.brigadiers.length) {
+      card.appendChild(el('p', { className: 'dc-brigadiers', 'data-no-i18n': true, text: joinNames(d.brigadiers.map(shortName)) }));
+    }
+    var rated = ['rating_food', 'rating_wine', 'rating_vibe'].some(function (k) { return d[k] !== null && d[k] !== undefined; });
+    if (rated) {
+      var score = S.scoreOf(d, scoreMode);
+      var label = (S.MODES.find(function (m) { return m.key === scoreMode; }) || S.MODES[0]).label;
+      card.appendChild(el('div', { className: 'dc-score-block' }, [
+        el('span', { className: 'dc-eyebrow', text: label + ' score' }),
+        el('span', { className: 'dc-score-wrap' }, [
+          el('span', { className: 'dc-score t-' + S.tier(score, v.scale), 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
+          el('span', { className: 'dc-scale', 'data-no-i18n': true, text: '/' + v.scale })
+        ])
       ]));
-      if (d.brigadiers && d.brigadiers.length) {
-        li.appendChild(el('p', { className: 'muted small', 'data-no-i18n': true, text: d.brigadiers.join(', ') }));
-      }
-      var ratings = S.MODES.map(function (m) {
-        var value = S.scoreOf(d, m.key);
-        return value === null ? null : el('span', { className: 'dinner-rating' }, [
-          el('span', { text: m.label }), document.createTextNode(' '),
-          el('strong', { 'data-no-i18n': true, text: S.withScale(value, v.scale) })
-        ]);
-      }).filter(Boolean);
-      li.appendChild(ratings.length ? el('p', { className: 'dinner-ratings' }, ratings) : el('p', { className: 'muted small', text: 'Not rated' }));
-      if (d.menu_url) {
-        var menu = el('button', { type: 'button', className: 'button link', text: 'Menu' });
-        menu.addEventListener('click', function () { openMenu(d.menu_url); });
-        li.appendChild(menu);
-      }
-      list.appendChild(li);
-    });
-    box.appendChild(list);
+      card.appendChild(el('div', { className: 'dc-bars' }, [
+        scoreBar('Plate', d.rating_food, v.scale),
+        scoreBar('Bottles', d.rating_wine, v.scale),
+        scoreBar('Atmosphere', d.rating_vibe, v.scale)
+      ]));
+    } else {
+      card.appendChild(el('p', { className: 'dc-tbc', text: 'Ratings coming soon' }));
+    }
+    if (d.menu_url) {
+      var menu = el('button', { type: 'button', className: 'dc-menu', text: 'View menu' });
+      menu.addEventListener('click', function () { openMenu(d.menu_url); });
+      card.appendChild(menu);
+    } else if (first) {
+      card.appendChild(el('p', { className: 'dc-no-menu', text: 'Menu not yet available' }));
+    }
+    return card;
+  }
+
+  function venuePopup(v) {
+    var box = el('div', { className: 'dinner-popup' }, [dinnerCard(v.dinners[0], v, true)]);
+    if (v.dinners.length > 1) {
+      box.appendChild(el('p', { className: 'dc-earlier-heading', text: 'Earlier dinners here' }));
+      v.dinners.slice(1).forEach(function (d) { box.appendChild(dinnerCard(d, v, false)); });
+    }
     return box;
   }
 
