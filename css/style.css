@@ -908,9 +908,9 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .legend-silver { background: var(--silver); }
 .legend-bronze { background: var(--bronze); }
 .legend-tbc { background: var(--border); }
-.events-legend {
-  position: fixed; z-index: 998; left: calc(12px + env(safe-area-inset-left)); bottom: calc(88px + env(safe-area-inset-bottom));
-  max-width: calc(100vw - 24px); flex-wrap: wrap;
+.events-legend {   /* bottom right, above the map credits, clear of the Events / Recos button */
+  position: fixed; z-index: 998; right: calc(12px + env(safe-area-inset-right)); bottom: calc(30px + env(safe-area-inset-bottom));
+  max-width: calc(100vw - 136px); flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px;
 }
 .events-scores {
   position: fixed; z-index: 999; top: calc(72px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
@@ -937,8 +937,42 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .mode-button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
 .mode-button[aria-pressed="true"] { background: var(--brass); color: var(--on-brass); }
 .recos-page .recos-float { bottom: calc(96px + env(safe-area-inset-bottom)); }
-.dinner-popup .dinner-when { display: flex; align-items: center; gap: 8px; margin: 0; }
-.dinner-ratings { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 4px 0 0; font-size: 0.9rem; }
+/* The dinner card (Events popup), as on the dinner maps */
+.dinner-leaflet-popup .leaflet-popup-content { margin: 18px 20px; }
+.dinner-card + .dinner-card { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.dc-eyebrow { margin: 0; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.dc-name { margin: 8px 0; font-family: var(--font-title); font-weight: 600; font-size: 1.9rem; line-height: 1.1; color: var(--text); }
+.dc-address { margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
+.dc-brigadiers { margin: 6px 0 0; color: var(--text); font-size: 0.875rem; font-weight: 500; }
+.dc-score-block {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
+  margin: 18px 0 14px; padding: 14px 0 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.dc-score-wrap { display: inline-flex; align-items: baseline; gap: 4px; }
+.dc-score { font-family: var(--font-title); font-weight: 600; font-size: 3.2rem; line-height: 0.9; }
+.dc-scale { color: var(--muted); font-size: 0.85rem; }
+.dc-score.t-gold { color: var(--gold); }
+.dc-score.t-silver { color: var(--silver); }
+.dc-score.t-bronze { color: var(--bronze); }
+.dc-score.t-tbc { color: var(--muted); }
+.dc-bars { display: flex; flex-direction: column; gap: 10px; }
+.dc-bar { display: grid; grid-template-columns: 84px 1fr 44px; align-items: center; gap: 12px; font-size: 0.875rem; }
+.dc-bar-label { color: var(--muted); }
+.dc-bar-track { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.dc-bar-fill { display: block; height: 100%; background: var(--brass); border-radius: 999px; }
+.dc-bar-value { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dc-tbc { margin: 18px 0 0; padding: 14px 0; border-top: 1px solid var(--border); color: var(--muted); font-style: italic; font-size: 0.9375rem; }
+.dc-menu {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: var(--touch); margin-top: 18px;
+  border: 1px solid var(--gold); border-radius: 999px; background: var(--gold); color: #0B2217;
+  font: inherit; font-size: 0.875rem; font-weight: 600; cursor: pointer;
+}
+.dc-menu:hover { border-color: var(--brass); background: var(--brass); }
+.dc-menu:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+.dc-no-menu { margin: 18px 0 0; color: var(--muted); font-size: 0.8125rem; font-style: italic; text-align: center; }
+.dc-earlier-heading { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--border); font-size: 0.72rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass); }
+.dinner-card-earlier .dc-score { font-size: 2.2rem; }
+@media (max-width: 420px) { .dc-name { font-size: 1.6rem; } .dc-score { font-size: 2.6rem; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

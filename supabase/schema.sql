@@ -2242,7 +2242,8 @@ returns table (
   rating_vibe   numeric,        -- "atmosphere"
   overall       numeric,        -- as on the dinner maps: (2 x food + wine + vibe) / 4, needs all three
   menu_url      text,           -- an https link, or a path in the private menus bucket
-  rating_scale  smallint        -- the club's scale: 10 for The Nines, 20 for Les Ronds
+  rating_scale  smallint,       -- the club's scale: 10 for The Nines, 20 for Les Ronds
+  source_ref    text            -- the dinner's id from the old sheets, e.g. 'nines:#1.2' (null for new dinners)
 )
 language plpgsql
 stable
@@ -2265,7 +2266,7 @@ begin
                              where m.group_id = e.brigadier_group_id), '[]'::jsonb) end,
          e.rating_food, e.rating_wine, e.rating_vibe,
          round((2 * e.rating_food + e.rating_wine + e.rating_vibe) / 4, 2),   -- null unless all three are set
-         e.menu_url, c.rating_scale
+         e.menu_url, c.rating_scale, e.source_ref
   from public.club_events e
   join public.venues v on v.id = e.venue_id
   join public.clubs c on c.id = e.club_id
