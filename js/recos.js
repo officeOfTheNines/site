@@ -160,7 +160,14 @@
     var box = el('div', { className: 'reco-popup' }, [
       el('h3', { className: 'reco-place-name', 'data-no-i18n': true, text: place.name })
     ]);
-    if (place.address) box.appendChild(el('p', { className: 'muted small', 'data-no-i18n': true, text: place.address }));
+    var addressNode = place.address ? el('p', { className: 'muted small', 'data-no-i18n': true, text: place.address }) : null;
+    if (addressNode) box.appendChild(addressNode);
+    // Directions (Google Maps, by transport, from where the member is) and Copy address (js/map-tools.js)
+    if (window.NinesMapTools) {
+      var go = window.NinesMapTools.actions({ name: place.name, address: place.address, lat: place.lat, lng: place.lng }, N.lang,
+        { linkClass: 'button popup-directions', copyClass: 'button link popup-copy', selectNode: addressNode });
+      box.appendChild(el('div', { className: 'popup-place-actions' }, [go.directions, go.copy]));
+    }
     var list = el('ul', { className: 'reco-lines' });
     place.comments.forEach(function (c) { list.appendChild(commentLine(c, true)); });
     if (!place.comments.length) list.appendChild(el('li', { className: 'muted small', text: 'No recos you can see.' }));
@@ -890,11 +897,16 @@
   }
 
   function dinnerCard(d, v, first) {
+    var go = null;
     var card = el('section', { className: 'dinner-card' + (first ? '' : ' dinner-card-earlier') });
     card.appendChild(el('p', { className: 'dc-eyebrow', 'data-no-i18n': true, text: eyebrowOf(d) }));
     if (first) {
       card.appendChild(el('h3', { className: 'dc-name', 'data-no-i18n': true, text: v.name }));
-      if (v.address) card.appendChild(el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }));
+      var addressNode = v.address ? el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }) : null;
+      if (addressNode) card.appendChild(addressNode);
+      go = window.NinesMapTools ? window.NinesMapTools.actions({ name: v.name, address: v.address, lat: v.lat, lng: v.lng }, N.lang,
+        { linkClass: 'dc-menu dc-directions', copyClass: 'dc-copy', selectNode: addressNode }) : null;
+      if (go) card.appendChild(go.copy);
     }
     if (d.brigadiers && d.brigadiers.length) {
       card.appendChild(el('p', { className: 'dc-brigadiers', 'data-no-i18n': true, text: joinNames(d.brigadiers.map(shortName)) }));
@@ -918,13 +930,15 @@
     } else {
       card.appendChild(el('p', { className: 'dc-tbc', text: 'Ratings coming soon' }));
     }
+    // the newest dinner's card: Directions (gold) next to View menu
+    var buttons = first && go ? el('div', { className: 'dc-actions' }, [go.directions]) : null;
     if (d.menu_url) {
       var menu = el('button', { type: 'button', className: 'dc-menu', text: 'View menu' });
       menu.addEventListener('click', function () { openMenu(d.menu_url); });
-      card.appendChild(menu);
-    } else if (first) {
-      card.appendChild(el('p', { className: 'dc-no-menu', text: 'Menu not yet available' }));
+      if (buttons) buttons.appendChild(menu); else card.appendChild(menu);
     }
+    if (buttons) card.appendChild(buttons);
+    if (!d.menu_url && first) card.appendChild(el('p', { className: 'dc-no-menu', text: 'Menu not yet available' }));
     return card;
   }
 
@@ -1024,6 +1038,8 @@
     N.showState('ready');
     map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
     L.control.zoom({ position: 'topright' }).addTo(map);
+    // "find me": asks for the position only when tapped; never stored or sent (js/map-tools.js)
+    if (window.NinesMapTools) window.NinesMapTools.addLocate(map, { lang: N.lang, position: 'topright' });
     L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19, subdomains: 'abcd' }).addTo(map);
     setUpLongPress();
     updateVisibilityText();

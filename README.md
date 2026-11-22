@@ -33,6 +33,7 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
+| `js/map-tools.js` | "Find me", Directions and Copy address on every map. The same file is copied into the public dinner map repos (`map`, `mapronds`): change it in one place, copy it to the others. |
 | `js/club-switch.js` | The current club, for members of more than one club: a small switch in the top bar of every members page. |
 | `js/dinner-scores.js` | Dinner pins, colour tiers, legend and score buttons, ported from the club dinner maps, for the Events view. |
 | `js/dinner.js`, `js/dinners.js` | The "Next dinner" panel on the member home, and the Dinners admin page. |
@@ -262,6 +263,18 @@ unchanged.
   by the home page's dinner panel, its My clubs feed, and the Events view (all refresh in place). On pages
   about one club (directory, profile, admin, dinners), switching opens that page for the chosen club.
   Members of one club see no switch.
+
+#### Find me, Directions and Copy address (all maps)
+
+- **Find me**: a round button under the zoom buttons, on the Recos map (Recos and Events) and on both public dinner
+  maps. Only when tapped does it ask the browser for the position; it shows a blue dot with its accuracy and centres
+  the map there. If the position is refused, unavailable or too slow, a short message says so (English for The
+  Nines, French for Les Ronds) and the button keeps working. The position is never sent, logged or stored.
+- **Directions**: in every restaurant popup or card, a link to Google Maps directions by public transport from
+  wherever the person is: `https://www.google.com/maps/dir/?api=1&destination=<name, address, postcode>&travelmode=transit`
+  (the coordinates when the name or address is missing). It opens in a new tab. No API key, no Google Places.
+- **Copy address** copies "name, address, postcode", with a brief "Copied"; without the clipboard it selects the
+  address so it can be copied by hand.
 
 #### Claude's read access to replies (optional)
 
