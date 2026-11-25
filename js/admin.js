@@ -58,6 +58,8 @@
   var groupForm = document.getElementById('group-form');
   var groupFormTitle = document.getElementById('group-form-title');
   var groupSelects = Array.prototype.slice.call(document.querySelectorAll('.group-member'));
+  var roleSelects = Array.prototype.slice.call(document.querySelectorAll('.group-role'));
+  var ROLE_TEXT = { 0: 'godfather', 1: 'godson' };
   var groupSubmit = document.getElementById('group-submit');
   var groupCancel = document.getElementById('group-cancel');
   var groupDeleteDialog = document.getElementById('group-delete-dialog');
@@ -70,7 +72,7 @@
   var emailConfirm = document.getElementById('email-confirm');
 
   var myEmail = '';
-  var groups = [];   // [{ id, memberIds: [profile ids] }]
+  var groups = [];   // [{ id, memberIds: [profile ids], roles: { profile id: 0 | 1 | null } }]
   var editingGroupId = null;
   var access = [];   // this club's club_access rows
   var cards = [];    // profiles rows
@@ -134,13 +136,14 @@
     if (g.error) throw g.error;
     var groupIds = (g.data || []).map(function (row) { return row.id; });
     var gm = groupIds.length
-      ? await client.from('brigadier_group_members').select('group_id, profile_id').in('group_id', groupIds)
+      ? await client.from('brigadier_group_members').select('group_id, profile_id, is_godson').in('group_id', groupIds)
       : { data: [], error: null };
     if (gm.error) throw gm.error;
     groups = (g.data || []).map(function (row) {
       return {
         id: row.id,
-        memberIds: (gm.data || []).filter(function (x) { return x.group_id === row.id; }).map(function (x) { return x.profile_id; })
+        memberIds: (gm.data || []).filter(function (x) { return x.group_id === row.id; }).map(function (x) { return x.profile_id; }),
+        roles: (gm.data || []).filter(function (x) { return x.group_id === row.id; }).reduce(function (m, x) { m[x.profile_id] = x.is_godson; return m; }, {})
       };
     });
 
@@ -535,7 +538,14 @@
   }
 
   function groupLabel(group) {
-    var names = group.memberIds.map(cardName).sort(function (a, b) { return collator.compare(a, b); });
+    // godfather first, then godson, then the others by name; "(godfather)" / "(godson)" after the name
+    var rank = function (id) { var r = (group.roles || {})[id]; return r === 0 ? 0 : r === 1 ? 1 : 2; };
+    var names = group.memberIds.slice().sort(function (a, b) {
+      return rank(a) - rank(b) || collator.compare(cardName(a), cardName(b));
+    }).map(function (id) {
+      var r = (group.roles || {})[id];
+      return cardName(id) + (r === 0 || r === 1 ? ' (' + (window.NinesI18n ? window.NinesI18n.translate(ROLE_TEXT[r]) : ROLE_TEXT[r]) + ')' : '');
+    });
     return names.length ? P.joinNames(names) : '(no members)';
   }
 
@@ -575,6 +585,7 @@
   function resetGroupForm() {
     editingGroupId = null;
     groupSelects.forEach(function (s) { s.value = ''; });
+    roleSelects.forEach(function (s) { s.value = ''; });
     groupFormTitle.textContent = 'New brigadier group';
     groupSubmit.textContent = 'Create group';
     groupCancel.hidden = true;
@@ -585,6 +596,10 @@
     editingGroupId = group.id;
     fillGroupSelects();
     groupSelects.forEach(function (s, i) { s.value = group.memberIds[i] || ''; });
+    roleSelects.forEach(function (s, i) {
+      var r = group.memberIds[i] ? (group.roles || {})[group.memberIds[i]] : null;
+      s.value = r === 0 || r === 1 ? String(r) : '';
+    });
     groupFormTitle.textContent = 'Edit group ' + group.id;
     groupSubmit.textContent = 'Save group';
     groupCancel.hidden = false;
@@ -602,11 +617,19 @@
     var unique = ids.filter(function (id, i) { return ids.indexOf(id) === i; });
     if (unique.length !== ids.length) { showError('The same person is chosen twice.'); return; }
     if (unique.length < 2) { showError('Choose at least two members for a brigadier group.'); groupSelects[0].focus(); return; }
+    // roles in the same order as the members: 0 = godfather, 1 = godson, null = brigadier
+    var roles = groupSelects.map(function (s, i) { return s.value ? (roleSelects[i] && roleSelects[i].value !== '' ? Number(roleSelects[i].value) : null) : undefined; })
+      .filter(function (r) { return r !== undefined; });
+    var godfathers = roles.filter(function (r) { return r === 0; }).length, godsons = roles.filter(function (r) { return r === 1; }).length;
+    if ((godfathers || godsons) && (godfathers !== 1 || godsons < 1)) {
+      showError('A sponsor pair needs one godfather and a godson. Set the roles, or leave them all on "Brigadier".');
+      return;
+    }
 
     groupSubmit.disabled = true;
     showError('');
     var wasEditing = editingGroupId;
-    var result = await client.rpc('admin_save_brigadier_group', { p_club: clubId, p_group_id: editingGroupId, p_profile_ids: unique });
+    var result = await client.rpc('admin_save_brigadier_group', { p_club: clubId, p_group_id: editingGroupId, p_profile_ids: unique, p_is_godson: roles });
     groupSubmit.disabled = false;
     if (result.error) { showError('Could not save the group. ' + dbError(result.error)); await refresh(); return; }
     showStatus((wasEditing ? 'Group ' + wasEditing + ' saved: ' : 'Group ' + result.data + ' created: ') + P.joinNames(unique.map(cardName)) + '.');

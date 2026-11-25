@@ -133,8 +133,14 @@ clubs. All clubs share one web address, so one sign-in covers them all.
   `brigadier_group_members` (which people belong to which group). Members must have a card in the group's
   club, so groups can be set up before people sign in.
 - **Co-brigadiers are never stored.** A person's co-brigadiers are worked out from the groups they share,
-  so the relationship is never typed twice. Directory cards show "Co-brigadiers: …", naming listed cards
+  so the relationship is never typed twice. Directory cards show "Co-brigadier: …", naming listed cards
   only.
+- **Sponsor pairs (godfather / godson).** `brigadier_group_members.is_godson` is 0 for the godfather (the
+  sponsor), 1 for the godson and empty for an ordinary group. `directory()` returns, for each card, the
+  related members with a relation code: `godson` (the other person is this member's godson), `godfather`,
+  or `co_brigadier` in every other case (either value empty, or both equal). The page shows "Godson: …",
+  "Godfather: …" or "Co-brigadier: …" ("Filleul", "Parrain", "Co-brigadier" on the French site). Admins set
+  the roles in the group editor. The Nines' groups are all ordinary (empty) for now.
 - A person normally belongs to one group. More than one is allowed (the admin page marks people who are
   already in a group) but the site does not build anything special around it.
 - Club admins create, edit and delete their club's groups on the admin page. Deleting a group keeps the
@@ -344,9 +350,17 @@ photo shows. For example, Arnaud's main photo shows at The Nines, and Les Ronds 
 ### Directory privacy
 
 - Members only see a club's directory through the database function `directory(club)`, and only for
-  clubs they belong to. It returns listed cards only. Someone's email or phone appears **only** when that
-  person ticked "Show my email" / "Show my phone number" for that club, except that **the club's admins
-  always see every email and phone** in their club's directory.
+  clubs they belong to. It returns listed cards only. Someone's email, mobile or home address appears
+  **only** when that person ticked "Show my email" / "Show my mobile" / "Show my home address" for that
+  club, except that **the club's admins always see everything** in their club's directory, with a
+  discreet "Hidden from members" marker on what others cannot see (`private_fields`, admins only).
+- Per card and per club (`club_profiles`): occupation, other clubs (a list), home address and the three
+  show boxes, which the member or a club admin can change; member number and club role, which only the
+  club's admins can change (the database keeps the old values when anyone else tries). Email and mobile
+  stay on the shared profile (the same person in every club). On the French site, a French mobile typed
+  as "06 12 34 56 78" is stored as "+33612345678" and shown as "06 12 34 56 78".
+- The directory search covers name, occupation and other clubs. Admins can download the directory as a
+  CSV file (Excel-friendly; cells that look like formulas are made safe).
 - Ordinary members can read only their **own** rows in `members`, `profiles` and `club_profiles`, so
   they cannot look up other people's email or phone directly. Club admins read and edit their club's
   people; super admins everyone.
@@ -374,6 +388,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/014_directory_details.sql` | Step 14: directory details per club card (member number, club role, occupation, other clubs, home address and a "show address" box), `is_godson` on brigadier group members (godfather / godson pairs), and `directory()` returning these fields and each card's related members with relation codes. Adds columns and replaces functions; no data changed. |
 | `migrations/013_dinner_map_ref.sql` | Step 13: `club_dinner_map()` also returns each dinner's sheet id, shown as "#1.2" on the Events card. One function replaced; no table or data changes. |
 | `migrations/012_events_map.sql` | Step 12: `club_dinner_map(club)` for the Events view on the Recos map, and `activity_feed()` gets an optional current club for "My clubs". Functions only; no table or data changes. |
 | `migrations/011_dinner_calendar.sql` | Step 11: dinner calendar and replies. `club_events` gets `brigadier_group_id`, `rsvp_status` (not_open / open / closed) and `rsvp_deadline`, and its venue becomes optional; `clubs` gets `timezone`; new table `club_event_answers`; functions `rsvp_answer()`, `home_dinner_panel()`, `admin_set_answer()`, `admin_event_answers()`, `admin_save_event()`, `admin_set_rsvp_status()`, `admin_set_rsvp_deadline()`, `admin_club_events()`, `admin_venue_options()`, `admin_brigadier_group_options()`; the read-only view and role for Claude. Nothing deleted; past dinners unchanged. |
