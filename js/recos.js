@@ -758,7 +758,7 @@
   var modeToggle = document.getElementById('mode-toggle');
   var modeOptions = Array.prototype.slice.call(modeToggle.querySelectorAll('.mode-option'));
   var scoresNode = document.getElementById('events-scores');
-  var dinnerMedals = {};   // { dinner id: 'gold' | 'silver' | 'bronze' | 'other' | 'tbc' } for the chosen score
+  var legendNode = document.getElementById('events-legend');
   var eventsEmpty = document.getElementById('events-empty');
 
   function readMode() {
@@ -794,28 +794,14 @@
     drawDinners();
   }
 
-  // One pin per venue. Medals are per club year for the chosen score (gold = the year's best dinner,
-  // then silver, bronze; dark green for the others; grey when not rated). A venue shows its best medal,
-  // and the score of that dinner (the newest dinner when it won none).
-  var MEDAL_TEXT = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' };
-  function venueMedal(v) {
-    var best = v.dinners[0], medal = dinnerMedals[best.event_id] || 'tbc';
-    v.dinners.forEach(function (d) {
-      var m = dinnerMedals[d.event_id] || 'tbc';
-      if (S.better(m, medal) && m !== medal) { best = d; medal = m; }
-    });
-    return { dinner: best, medal: medal };
-  }
+  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated).
   function drawDinners() {
     Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
     dinnerMarkers = {};
-    dinnerMedals = S.medals([].concat.apply([], dinnerVenues.map(function (v) { return v.dinners; })), scoreMode);
     dinnerVenues.forEach(function (v) {
-      var pick = venueMedal(v);
-      var score = S.scoreOf(pick.dinner, scoreMode);
-      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale) +
-        (MEDAL_TEXT[pick.medal] ? ', ' + MEDAL_TEXT[pick.medal] + ' ' + S.yearOf(pick.dinner) : ''));
-      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, pick.medal), title: label, alt: label, keyboard: true });
+      var score = S.scoreOf(v.dinners[0], scoreMode);
+      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale));
+      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale), title: label, alt: label, keyboard: true });
       marker.bindPopup(function () { return venuePopup(v); }, {
         className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
         maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
@@ -823,6 +809,7 @@
       });
       dinnerMarkers[v.id] = marker;
     });
+    S.legend(legendNode, dinnerVenues.length ? dinnerVenues[0].scale : 10);
     applyEventsFilter();
   }
 
@@ -930,17 +917,12 @@
     if (rated) {
       var score = S.scoreOf(d, scoreMode);
       var label = (S.MODES.find(function (m) { return m.key === scoreMode; }) || S.MODES[0]).label;
-      var medal = dinnerMedals[d.event_id] || 'tbc';
       card.appendChild(el('div', { className: 'dc-score-block' }, [
         el('span', { className: 'dc-eyebrow', text: label + ' score' }),
         el('span', { className: 'dc-score-wrap' }, [
-          el('span', { className: 'dc-score t-' + medal, 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
+          el('span', { className: 'dc-score t-' + S.tier(score, v.scale), 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
           el('span', { className: 'dc-scale', 'data-no-i18n': true, text: '/' + v.scale })
-        ]),
-        // no legend on the map: the card says which medal this dinner won, and in which year
-        MEDAL_TEXT[medal] ? el('span', { className: 'dc-medal t-' + medal }, [
-          el('span', { text: MEDAL_TEXT[medal] }), document.createTextNode(' · '), el('span', { 'data-no-i18n': true, text: S.yearOf(d) })
-        ]) : null
+        ])
       ]));
       card.appendChild(el('div', { className: 'dc-bars' }, [
         scoreBar('Plate', d.rating_food, v.scale),
@@ -998,6 +980,7 @@
     addOpen.hidden = ev || !canAdd;
     document.getElementById('recos-scope').hidden = ev;   // My clubs / All clubs: Recos only
     scoresNode.hidden = !ev;
+    legendNode.hidden = !ev;
     searchInput.placeholder = ev ? 'Search dinners' : 'Search recos';
     map.closePopup();
     closeResults();
