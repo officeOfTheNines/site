@@ -938,6 +938,12 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .pin--silver .pin-dot { background: var(--silver); }
 .pin--bronze .pin-dot { background: var(--bronze); }
 .pin--tbc .pin-dot { background: var(--border); color: var(--muted); font-size: 0.8rem; }
+/* the season's best dinner: a star in the same colour, the score inside */
+.pin--star { filter: drop-shadow(0 0 1.5px var(--page)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
+.pin--star .pin-dot {
+  width: 40px; height: 40px; border: 0; border-radius: 0; box-shadow: none; padding-top: 5px; font-size: 0.66rem;
+  clip-path: polygon(50% 0%, 61.8% 35.4%, 100% 38.2%, 69.1% 61.8%, 80.9% 100%, 50% 76.4%, 19.1% 100%, 30.9% 61.8%, 0% 38.2%, 38.2% 35.4%);
+}
 .pin:focus-visible { outline: none; }
 .pin:focus-visible .pin-dot { outline: 2px solid var(--brass); outline-offset: 5px; }
 .legend {
@@ -950,6 +956,7 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .legend-silver { background: var(--silver); }
 .legend-bronze { background: var(--bronze); }
 .legend-tbc { background: var(--border); }
+.legend-star { width: auto; height: auto; background: none; color: var(--text); font-size: 0.9rem; line-height: 1; }
 .events-legend {   /* bottom right, above the map credits, clear of the Recos | Dinners toggle */
   position: fixed; z-index: 998; right: calc(12px + env(safe-area-inset-right)); bottom: calc(30px + env(safe-area-inset-bottom));
   max-width: calc(100vw - 220px - env(safe-area-inset-left) - env(safe-area-inset-right)); flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px;
@@ -999,6 +1006,10 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .dc-score.t-gold { color: var(--gold); }
 .dc-score.t-silver { color: var(--silver); }
 .dc-score.t-bronze { color: var(--bronze); }
+.dc-best { display: block; margin-top: 2px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; }
+.dc-best.t-gold { color: var(--gold); }
+.dc-best.t-silver { color: var(--silver); }
+.dc-best.t-bronze { color: var(--bronze); }
 .dc-score.t-tbc { color: var(--muted); }
 .dc-bars { display: flex; flex-direction: column; gap: 10px; }
 .dc-bar { display: grid; grid-template-columns: 84px 1fr 44px; align-items: center; gap: 12px; font-size: 0.875rem; }

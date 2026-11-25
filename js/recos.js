@@ -794,14 +794,20 @@
     drawDinners();
   }
 
-  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated).
+  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated). A venue that
+  // hosted the best dinner of a season (for the chosen score) shows a star instead, with that dinner's score.
+  var seasonBestIds = {};
   function drawDinners() {
     Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
     dinnerMarkers = {};
+    seasonBestIds = S.seasonBest([].concat.apply([], dinnerVenues.map(function (v) { return v.dinners; })), scoreMode);
     dinnerVenues.forEach(function (v) {
-      var score = S.scoreOf(v.dinners[0], scoreMode);
-      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale));
-      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale), title: label, alt: label, keyboard: true });
+      var best = v.dinners.filter(function (d) { return seasonBestIds[d.event_id]; })
+        .sort(function (a, b) { return S.scoreOf(b, scoreMode) - S.scoreOf(a, scoreMode); })[0];
+      var shown = best || v.dinners[0];
+      var score = S.scoreOf(shown, scoreMode);
+      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale)) + (best ? ', best of ' + S.yearOf(best) : '');
+      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale, !!best), title: label, alt: label, keyboard: true });
       marker.bindPopup(function () { return venuePopup(v); }, {
         className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
         maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
@@ -922,7 +928,11 @@
         el('span', { className: 'dc-score-wrap' }, [
           el('span', { className: 'dc-score t-' + S.tier(score, v.scale), 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
           el('span', { className: 'dc-scale', 'data-no-i18n': true, text: '/' + v.scale })
-        ])
+        ]),
+        seasonBestIds[d.event_id] ? el('span', { className: 'dc-best t-' + S.tier(score, v.scale) }, [
+          el('span', { 'aria-hidden': 'true', text: '★ ' }), el('span', { text: 'Best of the season' }),
+          document.createTextNode(' · '), el('span', { 'data-no-i18n': true, text: S.yearOf(d) })
+        ]) : null
       ]));
       card.appendChild(el('div', { className: 'dc-bars' }, [
         scoreBar('Plate', d.rating_food, v.scale),
