@@ -91,6 +91,13 @@ a:hover { color: var(--brass-hover); }
   border-bottom: 1px solid var(--border);
   padding: 12px 16px;
 }
+/* the top bar stays in view while the page scrolls (the Recos map page does not scroll) */
+body:not(.recos-page) .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: var(--page);
+}
 .site-header-inner {
   max-width: 960px;
   margin: 0 auto;
@@ -1044,3 +1051,30 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
   }
   .spinner { animation: none; border-top-color: var(--brass); }
 }
+
+/* Admin: collapsible sections (details / summary) */
+.section-toggle > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--touch);
+  cursor: pointer;
+  list-style: none;
+}
+.section-toggle > summary::-webkit-details-marker { display: none; }
+.section-toggle > summary h2 { margin: 0; }
+.section-toggle > summary::after {
+  content: '';
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--brass);
+  border-bottom: 2px solid var(--brass);
+  transform: rotate(45deg);
+  margin: 0 6px 4px 0;
+  transition: transform 0.15s ease;
+}
+.section-toggle:not([open]) > summary::after { transform: rotate(-45deg); margin-bottom: 0; }
+.section-toggle[open] > summary { margin-bottom: 12px; }
+.section-toggle > summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; border-radius: 4px; }

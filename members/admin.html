@@ -60,134 +60,144 @@
         (what members see) are managed separately below, for this club only.</p>
 
       <section id="super-admins" class="panel" hidden aria-labelledby="super-admins-heading">
-        <h2 id="super-admins-heading">Super admins</h2>
-        <p class="muted">Admins of every club. Only you and other super admins see this list; it is changed in
-          the Supabase SQL editor (see the README).</p>
-        <ul id="super-admins-list" class="link-list"></ul>
+        <details class="section-toggle" open data-section="super-admins">
+          <summary><h2 id="super-admins-heading">Super admins</h2></summary>
+          <p class="muted">Admins of every club. Only you and other super admins see this list; it is changed in
+            the Supabase SQL editor (see the README).</p>
+          <ul id="super-admins-list" class="link-list"></ul>
+        </details>
       </section>
 
       <div id="admin-error" class="message error" role="alert"></div>
       <div id="admin-status" class="message success" role="status" aria-live="polite"></div>
 
       <section class="panel" aria-labelledby="add-heading">
-        <h2 id="add-heading">Add a member</h2>
-        <form id="add-form" class="member-form" novalidate>
-          <div class="field">
-            <label for="add-email">Email</label>
-            <input id="add-email" type="email" autocomplete="off" inputmode="email" required>
-          </div>
-          <div class="field">
-            <label for="add-name">Display name</label>
-            <input id="add-name" type="text" maxlength="80" autocomplete="off" required>
-          </div>
-          <div class="field">
-            <label for="add-role">Role</label>
-            <select id="add-role">
-              <option value="member" selected>Member</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div class="field checks">
-            <label class="check"><input id="add-listed" type="checkbox" checked> <span>Listed in the directory</span></label>
-            <label class="check"><input id="add-foreign" type="checkbox"> <span>Foreign member</span></label>
-            <label class="check"><input id="add-nocard" type="checkbox"> <span>No directory card <span class="muted">(office or staff account: access only)</span></span></label>
-          </div>
-          <div class="form-end">
-            <button type="submit" class="button" id="add-submit">Add member</button>
-            <p class="hint">Gives access and creates their directory card together. If the email already has a card
-              (for example someone whose access was removed), access is restored and the card is kept.</p>
-          </div>
-        </form>
+        <details class="section-toggle" open data-section="add">
+          <summary><h2 id="add-heading">Add a member</h2></summary>
+          <form id="add-form" class="member-form" novalidate>
+            <div class="field">
+              <label for="add-email">Email</label>
+              <input id="add-email" type="email" autocomplete="off" inputmode="email" required>
+            </div>
+            <div class="field">
+              <label for="add-name">Display name</label>
+              <input id="add-name" type="text" maxlength="80" autocomplete="off" required>
+            </div>
+            <div class="field">
+              <label for="add-role">Role</label>
+              <select id="add-role">
+                <option value="member" selected>Member</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <div class="field checks">
+              <label class="check"><input id="add-listed" type="checkbox" checked> <span>Listed in the directory</span></label>
+              <label class="check"><input id="add-foreign" type="checkbox"> <span>Foreign member</span></label>
+              <label class="check"><input id="add-nocard" type="checkbox"> <span>No directory card <span class="muted">(office or staff account: access only)</span></span></label>
+            </div>
+            <div class="form-end">
+              <button type="submit" class="button" id="add-submit">Add member</button>
+              <p class="hint">Gives access and creates their directory card together. If the email already has a card
+                (for example someone whose access was removed), access is restored and the card is kept.</p>
+            </div>
+          </form>
+        </details>
       </section>
 
       <section class="panel" aria-labelledby="access-heading">
-        <h2 id="access-heading">Access</h2>
-        <p class="muted">Only these emails can sign in and see the member area.</p>
-        <p id="access-loading" class="muted">Loading…</p>
-        <table class="allowlist" id="access-table" hidden>
-          <caption id="access-caption"></caption>
-          <thead>
-            <tr>
-              <th scope="col">Email</th>
-              <th scope="col">Role</th>
-              <th scope="col">Added by</th>
-              <th scope="col">Added on</th>
-              <th scope="col">Card</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="access-body"></tbody>
-        </table>
+        <details class="section-toggle" open data-section="access">
+          <summary><h2 id="access-heading">Access</h2></summary>
+          <p class="muted">Only these emails can sign in and see the member area.</p>
+          <p id="access-loading" class="muted">Loading…</p>
+          <table class="allowlist" id="access-table" hidden>
+            <caption id="access-caption"></caption>
+            <thead>
+              <tr>
+                <th scope="col">Email</th>
+                <th scope="col">Role</th>
+                <th scope="col">Added by</th>
+                <th scope="col">Added on</th>
+                <th scope="col">Card</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="access-body"></tbody>
+          </table>
+        </details>
       </section>
 
       <section class="panel" aria-labelledby="cards-heading">
-        <h2 id="cards-heading">Directory cards</h2>
-        <p class="muted">Every profile, including people without access. Only listed cards appear in the directory.</p>
-        <p id="cards-loading" class="muted">Loading…</p>
-        <p id="cards-empty" class="muted" hidden>No cards yet.</p>
-        <table class="allowlist" id="cards-table" hidden>
-          <caption id="cards-caption"></caption>
-          <thead>
-            <tr>
-              <th scope="col">Name</th>
-              <th scope="col">Email</th>
-              <th scope="col">Access</th>
-              <th scope="col">Signed in</th>
-              <th scope="col">Directory</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="cards-body"></tbody>
-        </table>
+        <details class="section-toggle" open data-section="cards">
+          <summary><h2 id="cards-heading">Directory cards</h2></summary>
+          <p class="muted">Every profile, including people without access. Only listed cards appear in the directory.</p>
+          <p id="cards-loading" class="muted">Loading…</p>
+          <p id="cards-empty" class="muted" hidden>No cards yet.</p>
+          <table class="allowlist" id="cards-table" hidden>
+            <caption id="cards-caption"></caption>
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Email</th>
+                <th scope="col">Access</th>
+                <th scope="col">Signed in</th>
+                <th scope="col">Directory</th>
+                <th scope="col"><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="cards-body"></tbody>
+          </table>
+        </details>
       </section>
 
       <section class="panel" aria-labelledby="groups-heading">
-        <h2 id="groups-heading">Brigadier groups</h2>
-        <p class="muted">The standing teams that organise the dinners, usually two people, rarely three.
-          Co-brigadiers shown on directory cards come from these groups.</p>
-        <p class="muted small">For a sponsor pair, set the godfather (the sponsor) and the godson: cards then show
-          "Godfather" and "Godson" instead of "Co-brigadier". Leave "Brigadier" for an ordinary group.</p>
-        <p id="groups-loading" class="muted">Loading…</p>
-        <p id="groups-empty" class="muted" hidden>No brigadier groups yet.</p>
-        <ul id="groups-list" class="group-list" hidden></ul>
+        <details class="section-toggle" open data-section="groups">
+          <summary><h2 id="groups-heading">Brigadier groups</h2></summary>
+          <p class="muted">The standing teams that organise the dinners, usually two people, rarely three.
+            Co-brigadiers shown on directory cards come from these groups.</p>
+          <p class="muted small">For a sponsor pair, set the godfather (the sponsor) and the godson: cards then show
+            "Godfather" and "Godson" instead of "Co-brigadier". Leave "Brigadier" for an ordinary group.</p>
+          <p id="groups-loading" class="muted">Loading…</p>
+          <p id="groups-empty" class="muted" hidden>No brigadier groups yet.</p>
+          <ul id="groups-list" class="group-list" hidden></ul>
 
-        <form id="group-form" class="group-form" novalidate aria-labelledby="group-form-title">
-          <h3 id="group-form-title" class="form-title">New brigadier group</h3>
-          <div class="field">
-            <label for="group-member-1">Member 1</label>
-            <select id="group-member-1" class="group-member"></select>
-            <label for="group-role-1" class="group-role-label">Role of member 1</label>
-            <select id="group-role-1" class="group-role">
-              <option value="">Brigadier</option>
-              <option value="0">Godfather</option>
-              <option value="1">Godson</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="group-member-2">Member 2</label>
-            <select id="group-member-2" class="group-member"></select>
-            <label for="group-role-2" class="group-role-label">Role of member 2</label>
-            <select id="group-role-2" class="group-role">
-              <option value="">Brigadier</option>
-              <option value="0">Godfather</option>
-              <option value="1">Godson</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="group-member-3">Member 3 <span class="muted">(optional)</span></label>
-            <select id="group-member-3" class="group-member"></select>
-            <label for="group-role-3" class="group-role-label">Role of member 3</label>
-            <select id="group-role-3" class="group-role">
-              <option value="">Brigadier</option>
-              <option value="0">Godfather</option>
-              <option value="1">Godson</option>
-            </select>
-          </div>
-          <div class="form-end">
-            <button type="submit" class="button" id="group-submit">Create group</button>
-            <button type="button" class="button secondary" id="group-cancel" hidden>Cancel editing</button>
-          </div>
-        </form>
+          <form id="group-form" class="group-form" novalidate aria-labelledby="group-form-title">
+            <h3 id="group-form-title" class="form-title">New brigadier group</h3>
+            <div class="field">
+              <label for="group-member-1">Member 1</label>
+              <select id="group-member-1" class="group-member"></select>
+              <label for="group-role-1" class="group-role-label">Role of member 1</label>
+              <select id="group-role-1" class="group-role">
+                <option value="">Brigadier</option>
+                <option value="0">Godfather</option>
+                <option value="1">Godson</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="group-member-2">Member 2</label>
+              <select id="group-member-2" class="group-member"></select>
+              <label for="group-role-2" class="group-role-label">Role of member 2</label>
+              <select id="group-role-2" class="group-role">
+                <option value="">Brigadier</option>
+                <option value="0">Godfather</option>
+                <option value="1">Godson</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="group-member-3">Member 3 <span class="muted">(optional)</span></label>
+              <select id="group-member-3" class="group-member"></select>
+              <label for="group-role-3" class="group-role-label">Role of member 3</label>
+              <select id="group-role-3" class="group-role">
+                <option value="">Brigadier</option>
+                <option value="0">Godfather</option>
+                <option value="1">Godson</option>
+              </select>
+            </div>
+            <div class="form-end">
+              <button type="submit" class="button" id="group-submit">Create group</button>
+              <button type="button" class="button secondary" id="group-cancel" hidden>Cancel editing</button>
+            </div>
+          </form>
+        </details>
       </section>
     </div>
 
