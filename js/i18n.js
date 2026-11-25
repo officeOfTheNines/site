@@ -360,6 +360,7 @@
     'Please contact us directly': 'Merci de nous contacter directement',
     'Our last dinner at': 'Notre dernier dîner chez',
     'Dinners': 'Dîners',
+    'Map view': 'Vue de la carte',
     'Dinners and replies': 'Dîners et réponses',
     'Dinners of': 'Dîners de',
     'Plan the club\'s dinners, open them for replies and see who is coming. Dinners have a date only, no time. Members see a dinner on their home page once its replies are open (or closed); "Not open" dinners stay hidden.': 'Planifiez les dîners du club, ouvrez les réponses et voyez qui vient. Les dîners ont une date, sans heure. Les membres voient un dîner sur leur page d’accueil dès que ses réponses sont ouvertes (ou closes) ; les dîners « Pas ouvert » restent cachés.',

@@ -67,7 +67,10 @@
       <div id="events-scores" class="events-scores" role="radiogroup" aria-label="Colour the dinners by" hidden></div>
       <div id="events-legend" class="legend events-legend" aria-hidden="true" hidden></div>
       <p id="events-empty" class="recos-float" hidden>No dinners on the map for this club yet.</p>
-      <button type="button" class="mode-button" id="mode-toggle" aria-pressed="false">Events</button>
+      <div class="mode-toggle" id="mode-toggle" role="radiogroup" aria-label="Map view">
+        <button type="button" class="mode-option" role="radio" data-mode="recos" aria-checked="true" tabindex="0">Recos</button>
+        <button type="button" class="mode-option" role="radio" data-mode="events" aria-checked="false" tabindex="-1">Dinners</button>
+      </div>
 
       <div class="recos-messages">
         <div id="recos-error" class="message error" role="alert"></div>
