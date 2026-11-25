@@ -458,9 +458,13 @@ textarea:focus-visible, input[type="search"]:focus-visible, input[type="tel"]:fo
   margin: 16px 0 24px;
 }
 .member-card {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  /* photo + name/occupation side by side; the other details use the whole width below */
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 12px;
+  align-items: center;
+  align-content: start;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -486,7 +490,10 @@ textarea:focus-visible, input[type="search"]:focus-visible, input[type="tel"]:fo
   font-weight: 600;
   color: var(--brass);
 }
-.card-body { min-width: 0; flex: 1; }
+.card-body { min-width: 0; }
+.card-head > :last-child { margin-bottom: 0; }
+.card-rest { grid-column: 1 / -1; min-width: 0; border-top: 1px solid var(--border); padding-top: 10px; }
+.card-rest > :last-child { margin-bottom: 0; }
 .card-name { font-size: 1.45rem; margin: 4px 0 6px; overflow-wrap: anywhere; }
 .card-bio { color: var(--text); margin: 0 0 8px; white-space: pre-line; overflow-wrap: anywhere; }
 .card-contact { list-style: none; margin: 0; padding: 0; }
@@ -522,7 +529,8 @@ textarea:focus-visible, input[type="search"]:focus-visible, input[type="tel"]:fo
 .card-relations { list-style: none; margin: 8px 0 0; padding: 0; overflow-wrap: anywhere; }
 .card-relations li { margin: 2px 0; }
 @media (max-width: 400px) {
-  .member-card { flex-direction: column; align-items: center; text-align: center; }
+  .member-card { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; }
+  .card-rest { justify-self: stretch; }
   .card-tags, .contact-row { justify-content: center; }
 }
 

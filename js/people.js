@@ -96,7 +96,8 @@
       avatar = el('div', { className: 'avatar avatar-initials', 'aria-hidden': 'true', text: initials(name) });
     }
 
-    var details = el('div', { className: 'card-body' }, [
+    // Beside the photo: name, labels, club role and occupation.
+    var details = el('div', { className: 'card-body card-head' }, [
       el(opts.headingTag || 'h2', { className: 'card-name', 'data-no-i18n': true, text: name })
     ]);
     var labels = [];
@@ -106,12 +107,14 @@
     if (person.club_role) details.appendChild(el('p', { className: 'card-role', 'data-no-i18n': true, text: person.club_role }));
     if (person.occupation) details.appendChild(el('p', { className: 'card-occupation', 'data-no-i18n': true, text: person.occupation }));
     var clubs = (person.other_clubs || []).filter(Boolean);
+    // Below the photo, across the whole card: other clubs, bio, contact rows and related members.
+    var rest = el('div', { className: 'card-rest' });
     if (clubs.length) {
-      details.appendChild(el('ul', { className: 'card-tags', 'aria-label': 'Other clubs' }, clubs.map(function (c) {
+      rest.appendChild(el('ul', { className: 'card-tags', 'aria-label': 'Other clubs' }, clubs.map(function (c) {
         return el('li', { className: 'tag', 'data-no-i18n': true, text: c });
       })));
     }
-    if (person.bio) details.appendChild(el('p', { className: 'card-bio', 'data-no-i18n': true, text: person.bio }));
+    if (person.bio) rest.appendChild(el('p', { className: 'card-bio', 'data-no-i18n': true, text: person.bio }));
 
     // Home, mobile, email. Admins also get a discreet marker on what other members cannot see
     // (private_fields comes from the database, for admins only).
@@ -132,7 +135,7 @@
     if (person.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(person.email)) {
       contactRow('email', 'Email:', el('a', { href: 'mailto:' + encodeURIComponent(person.email).replace(/%40/g, '@'), 'data-no-i18n': true, text: person.email }));
     }
-    if (contact.children.length) details.appendChild(contact);
+    if (contact.children.length) rest.appendChild(contact);
 
     // Related members: from the database's relation codes (directory), else plain co-brigadier names
     // (profile preview). One line per person and relation.
@@ -145,7 +148,7 @@
         return true;
       });
       if (rels.length) {
-        details.appendChild(el('ul', { className: 'card-relations' }, rels.map(function (r) {
+        rest.appendChild(el('ul', { className: 'card-relations' }, rels.map(function (r) {
           return el('li', null, [
             el('span', { className: 'muted', text: (RELATION[r.relation] || RELATION.co_brigadier) + ' ' }),
             el('span', { 'data-no-i18n': true, text: r.display_name })
@@ -153,13 +156,15 @@
         })));
       }
     } else if (person.co_brigadiers && person.co_brigadiers.length) {
-      details.appendChild(el('p', { className: 'card-brigadiers' }, [
+      rest.appendChild(el('p', { className: 'card-brigadiers' }, [
         el('span', { className: 'muted', text: (person.co_brigadiers.length === 1 ? 'Co-brigadier: ' : 'Co-brigadiers: ') }),
         joinNames(person.co_brigadiers)
       ]));
     }
 
-    return el('article', { className: 'member-card' }, [avatar, details]);
+    var parts = [avatar, details];
+    if (rest.children.length) parts.push(rest);
+    return el('article', { className: 'member-card' }, parts);
   }
 
   // Turns a chosen file into a square ~400px JPEG Blob. Re-drawing on a canvas drops all metadata
