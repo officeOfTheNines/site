@@ -252,15 +252,16 @@ unchanged.
 
 #### Events on the Recos map, and the current club (step 12)
 
-- **Events**: a button at the bottom left of the Recos map swaps the reco pins for the dinners of the member's
-  current club (and back: the button then reads "Recos"). The map keeps its position and zoom; the choice is
-  remembered in the browser. One pin per restaurant, coloured by the most recent dinner's score with the dinner
+- **[ Recos | Dinners ]**: a two-option toggle at the bottom left of the Recos map ("Recos | Dîners" on the
+  French site). The active option is highlighted; tapping the other swaps the reco pins for the dinners of the
+  member's current club, or back (arrow keys work too). The map keeps its position and zoom; the choice is
+  remembered in the browser. The colour legend leaves room for it, and the add sheet slides over it on phones. One pin per restaurant, coloured by the most recent dinner's score with the dinner
   maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
   grey "Not rated" when it has no score. Buttons: Overall (as on the dinner maps: food counts double,
   (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected
   score (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu
   (private menus open through a link that expires); earlier dinners at the same place are listed below.
-  The colour legend sits at the bottom right. In Events the + button and long-press are
+  The colour legend sits at the bottom right. In Dinners the + button and long-press are
   off, and My clubs / All clubs (Recos only) is hidden.
 - Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies
   are not open stay hidden, and so do dinners without a venue.

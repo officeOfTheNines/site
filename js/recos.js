@@ -754,7 +754,9 @@
   // ---- Events mode: the current club's dinners ----
 
   var S = window.NinesDinnerScores;
-  var modeButton = document.getElementById('mode-toggle');
+  // [ Recos | Dinners ]: two options, the active one highlighted (a radio group for screen readers)
+  var modeToggle = document.getElementById('mode-toggle');
+  var modeOptions = Array.prototype.slice.call(modeToggle.querySelectorAll('.mode-option'));
   var scoresNode = document.getElementById('events-scores');
   var legendNode = document.getElementById('events-legend');
   var eventsEmpty = document.getElementById('events-empty');
@@ -970,8 +972,11 @@
     mode = next;
     saveMode(next);
     var ev = next === 'events';
-    modeButton.textContent = ev ? 'Recos' : 'Events';
-    modeButton.setAttribute('aria-pressed', String(ev));
+    modeOptions.forEach(function (b) {
+      var on = b.dataset.mode === next;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
     addOpen.hidden = ev || !canAdd;
     document.getElementById('recos-scope').hidden = ev;   // My clubs / All clubs: Recos only
     scoresNode.hidden = !ev;
@@ -996,7 +1001,17 @@
     if (searchInput.value.trim()) showResults();
   }
 
-  modeButton.addEventListener('click', function () { setMode(mode === 'events' ? 'recos' : 'events', false); });
+  modeOptions.forEach(function (b) {
+    b.addEventListener('click', function () { if (b.dataset.mode !== mode) setMode(b.dataset.mode, false); });
+  });
+  // arrow keys move between the two options, as in any radio group
+  modeToggle.addEventListener('keydown', function (e) {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) === -1) return;
+    e.preventDefault();
+    var next = mode === 'events' ? 'recos' : 'events';
+    setMode(next, false);
+    modeOptions.forEach(function (b) { if (b.dataset.mode === next) b.focus(); });
+  });
 
   // ---- Start ----
 
