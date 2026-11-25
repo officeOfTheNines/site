@@ -4,6 +4,8 @@
 // 15 and 13 out of 20, which is the same once scores are scaled by the club's rating_scale.
 // Columns: rating_food = plate, rating_wine = bottles, rating_vibe = atmosphere ("Vibe", as on the maps).
 // Overall comes from the database with the maps' formula: (2 x food + wine + vibe) / 4, all three needed.
+// Season winners (highest score of the season in the chosen category, ties included) also come from the
+// database; the page only shows a small gold badge with the season number, and a line on the card.
 (function () {
   'use strict';
 
@@ -14,6 +16,9 @@
     { key: 'atmosphere', label: 'Vibe' }
   ];
   var COLUMN = { overall: 'overall', food: 'rating_food', wine: 'rating_wine', atmosphere: 'rating_vibe' };
+  // Season winners come from the database (club_dinner_map), one flag per score.
+  var WINNER = { overall: 'season_winner_overall', food: 'season_winner_food', wine: 'season_winner_wine', atmosphere: 'season_winner_vibe' };
+  function isWinner(dinner, mode) { return dinner[WINNER[mode] || WINNER.overall] === true; }
   var GOLD = 7.5, SILVER = 6.5;   // out of 10, as on the main map
 
   function num(v) {
@@ -41,10 +46,13 @@
   function withScale(v, scale) { return v === null ? null : short(v) + '/' + (scale || 10); }
 
   // The main map's pin: a 28px dot showing the score inside a 44px tap target; grey when not rated.
-  function icon(score, scale, label) {
+  // season = the season number when this restaurant hosted a season winner for the chosen score: a small gold
+  // badge on the dot's top-right edge (shown only when the map is zoomed in, see recos.js).
+  function icon(score, scale, season) {
+    var badge = season ? '<span class="pin-badge" aria-hidden="true">' + Number(season) + '</span>' : '';
     return window.L.divIcon({
       className: 'pin pin--' + tier(score, scale),
-      html: '<span class="pin-dot">' + (score === null ? '–' : Number(score).toFixed(1)) + '</span>',
+      html: '<span class="pin-dot">' + (score === null ? '–' : Number(score).toFixed(1)) + '</span>' + badge,
       iconSize: [44, 44], iconAnchor: [22, 22], popupAnchor: [0, -14]
     });
   }
@@ -65,5 +73,5 @@
     }));
   }
 
-  window.NinesDinnerScores = { MODES: MODES, scoreOf: scoreOf, tier: tier, icon: icon, legend: legend, withScale: withScale, short: short };
+  window.NinesDinnerScores = { MODES: MODES, scoreOf: scoreOf, isWinner: isWinner, tier: tier, icon: icon, legend: legend, withScale: withScale, short: short };
 })();

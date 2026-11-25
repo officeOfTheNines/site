@@ -794,14 +794,24 @@
     drawDinners();
   }
 
-  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated).
+  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated). When the venue
+  // hosted a season winner for the chosen score, a small gold badge shows that season's number (the latest
+  // such season); it appears only from BADGE_ZOOM, when the pins no longer pile up. Winner pins get no
+  // extra layering.
+  var BADGE_ZOOM = 15;
+  function showBadgesForZoom() {
+    map.getContainer().classList.toggle('show-season-badges', map.getZoom() >= BADGE_ZOOM);
+  }
   function drawDinners() {
     Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
     dinnerMarkers = {};
     dinnerVenues.forEach(function (v) {
       var score = S.scoreOf(v.dinners[0], scoreMode);
-      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale));
-      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale), title: label, alt: label, keyboard: true });
+      var won = v.dinners.filter(function (d) { return S.isWinner(d, scoreMode) && d.season_number; })
+        .sort(function (a, b) { return b.season_number - a.season_number; })[0];
+      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale)) +
+        (won ? ', winner of season ' + won.season_number : '');
+      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale, won ? won.season_number : null), title: label, alt: label, keyboard: true });
       marker.bindPopup(function () { return venuePopup(v); }, {
         className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
         maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
@@ -901,7 +911,17 @@
   function dinnerCard(d, v, first) {
     var go = null;
     var card = el('section', { className: 'dinner-card' + (first ? '' : ' dinner-card-earlier') });
-    card.appendChild(el('p', { className: 'dc-eyebrow', 'data-no-i18n': true, text: eyebrowOf(d) }));
+    // header: season · month · number, then (for a season winner in the chosen score) "Winner of Season 3 - Food"
+    var head = el('p', { className: 'dc-eyebrow dc-head' }, [el('span', { 'data-no-i18n': true, text: eyebrowOf(d) })]);
+    if (S.isWinner(d, scoreMode) && d.season_number) {
+      var category = (S.MODES.find(function (m) { return m.key === scoreMode; }) || S.MODES[0]).label;
+      head.appendChild(el('span', { className: 'dc-winner' }, [
+        el('span', { text: 'Winner of Season' }), document.createTextNode(' '),
+        el('span', { 'data-no-i18n': true, text: String(d.season_number) }), document.createTextNode(' - '),
+        el('span', { text: category })
+      ]));
+    }
+    card.appendChild(head);
     if (first) {
       card.appendChild(el('h3', { className: 'dc-name', 'data-no-i18n': true, text: v.name }));
       var addressNode = v.address ? el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }) : null;
@@ -1052,6 +1072,8 @@
     }
     N.showState('ready');
     map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    map.on('zoomend', showBadgesForZoom);   // season-winner badges only from BADGE_ZOOM
+    showBadgesForZoom();
     L.control.zoom({ position: 'topright' }).addTo(map);
     // "find me": asks for the position only when tapped; never stored or sent (js/map-tools.js)
     if (window.NinesMapTools) window.NinesMapTools.addLocate(map, { lang: N.lang, position: 'topright' });

@@ -257,7 +257,14 @@ unchanged.
   member's current club, or back (arrow keys work too). The map keeps its position and zoom; the choice is
   remembered in the browser. The colour legend leaves room for it, and the add sheet slides over it on phones. One pin per restaurant, coloured by the most recent dinner's score with the dinner
   maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
-  grey "Not rated" when it has no score. Buttons: Overall (as on the dinner maps: food counts double,
+  grey "Not rated" when it has no score.
+- **Season winners.** `club_dinner_map()` (step 15) flags, per dinner, whether it has the season's highest
+  score in each category (`season_winner_overall`, `_food`, `_wine`, `_vibe`; Overall = 0.5 x food + 0.25 x wine
+  + 0.25 x vibe; ties all win; no score, no win) and its `season_number`. The page uses the flag of the category
+  selected: a small gold badge with the season number sits on the top-right edge of the restaurant's circle
+  (circle unchanged; no extra layering), shown only from zoom 15, where the West End pins stop piling up. The
+  winning dinner's card says "Winner of Season 3 - Food" in its header ("Vainqueur de la saison 3 - Cuisine").
+  No legend entry. Buttons: Overall (as on the dinner maps: food counts double,
   (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected
   score (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu
   (private menus open through a link that expires); earlier dinners at the same place are listed below.
@@ -389,6 +396,7 @@ It runs as one transaction and is safe to run again. It creates the two clubs, t
 
 | File | What it adds |
 | --- | --- |
+| `migrations/015_season_winners.sql` | Step 15: `club_dinner_map()` also returns each dinner's season number and whether it won its season in Overall, Food, Wine and Vibe (ties included). One function replaced; no table or data changes. |
 | `migrations/014_directory_details.sql` | Step 14: directory details per club card (member number, club role, occupation, other clubs, home address and a "show address" box), `is_godson` on brigadier group members (godfather / godson pairs), and `directory()` returning these fields and each card's related members with relation codes. Adds columns and replaces functions; no data changed. |
 | `migrations/013_dinner_map_ref.sql` | Step 13: `club_dinner_map()` also returns each dinner's sheet id, shown as "#1.2" on the Events card. One function replaced; no table or data changes. |
 | `migrations/012_events_map.sql` | Step 12: `club_dinner_map(club)` for the Events view on the Recos map, and `activity_feed()` gets an optional current club for "My clubs". Functions only; no table or data changes. |

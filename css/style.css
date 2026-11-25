@@ -938,6 +938,15 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .pin--silver .pin-dot { background: var(--silver); }
 .pin--bronze .pin-dot { background: var(--bronze); }
 .pin--tbc .pin-dot { background: var(--border); color: var(--muted); font-size: 0.8rem; }
+/* season winner: a small gold badge with the season number on the dot's top-right edge, only when zoomed in
+   (the pin is already absolutely positioned by Leaflet, so the badge is placed inside it) */
+.pin-badge {
+  display: none; position: absolute; top: 4px; left: 25px; width: 15px; height: 15px; box-sizing: border-box;
+  align-items: center; justify-content: center; border-radius: 50%;
+  background: var(--gold); color: #0B2217; border: 1px solid #0B2217;
+  font-family: var(--font-body); font-size: 0.5625rem; font-weight: 700; line-height: 1; pointer-events: none;
+}
+.show-season-badges .pin-badge { display: flex; }
 .pin:focus-visible { outline: none; }
 .pin:focus-visible .pin-dot { outline: 2px solid var(--brass); outline-offset: 5px; }
 .legend {
@@ -999,6 +1008,8 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .dc-score.t-gold { color: var(--gold); }
 .dc-score.t-silver { color: var(--silver); }
 .dc-score.t-bronze { color: var(--bronze); }
+.dc-head { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; row-gap: 2px; }
+.dc-winner { color: var(--gold); letter-spacing: 0.06em; }
 .dc-score.t-tbc { color: var(--muted); }
 .dc-bars { display: flex; flex-direction: column; gap: 10px; }
 .dc-bar { display: grid; grid-template-columns: 84px 1fr 44px; align-items: center; gap: 12px; font-size: 0.875rem; }
