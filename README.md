@@ -35,7 +35,7 @@ database password anywhere in this repo.
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
 | `js/map-tools.js` | "Find me", Directions and Copy address on every map. The same file is copied into the public dinner map repos (`map`, `mapronds`): change it in one place, copy it to the others. |
 | `js/club-switch.js` | The current club, for members of more than one club: a small switch in the top bar of every members page. |
-| `js/dinner-scores.js` | Dinner pins, per-year medals (gold, silver, bronze, then dark green) and score buttons, for the Dinners view of the Recos map. |
+| `js/dinner-scores.js` | Dinner pins, colour tiers, legend and score buttons, ported from the club dinner maps, for the Events view. |
 | `js/dinner.js`, `js/dinners.js` | The "Next dinner" panel on the member home, and the Dinners admin page. |
 | `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
@@ -255,18 +255,16 @@ unchanged.
 - **[ Recos | Dinners ]**: a two-option toggle at the bottom left of the Recos map ("Recos | Dîners" on the
   French site). The active option is highlighted; tapping the other swaps the reco pins for the dinners of the
   member's current club, or back (arrow keys work too). The map keeps its position and zoom; the choice is
-  remembered in the browser. The add sheet slides over it on phones.
-- **Medals, per club year.** For the score chosen with the buttons at the top (Overall, as on the dinner maps:
-  (2 x food + wine + vibe) / 4, so it needs all three scores; Food; Wine; Vibe), each season's best dinner is
-  **gold**, the 2nd **silver**, the 3rd **bronze**; the other rated dinners are **dark green**, and dinners not
-  rated yet are grey. Tied scores share a place (two firsts are both gold, the next is 3rd). The season is the
-  dinner's own ("S4", "16-17"), else September to August from its date. One pin per restaurant: it shows its
-  best medal and that dinner's score (the newest dinner's when it won none). There is no legend (it took too much
-  room on phones); instead the dinner card says "Gold · S4" (or Silver / Bronze) under the score.
-- The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected score
-  (big, in its medal colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu (private
-  menus open through a link that expires); earlier dinners at the same place are listed below. In Dinners the +
-  button and long-press are off, and My clubs / All clubs (Recos only) is hidden.
+  remembered in the browser. The colour legend leaves room for it, and the add sheet slides over it on phones. One pin per restaurant, coloured by the most recent dinner's score with the dinner
+  maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
+  grey "Not rated" when it has no score. The **best dinner of each season** for the chosen score (Overall, Food,
+  Wine or Vibe; ties all count) is a **star** instead of a dot, in the same colour, and its card says
+  "★ Best of the season · S4". A restaurant that hosted a season's best shows the star with that dinner's score. Buttons: Overall (as on the dinner maps: food counts double,
+  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected
+  score (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu
+  (private menus open through a link that expires); earlier dinners at the same place are listed below.
+  The colour legend sits at the bottom right. In Dinners the + button and long-press are
+  off, and My clubs / All clubs (Recos only) is hidden.
 - Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies
   are not open stay hidden, and so do dinners without a venue.
 - **Current club**: members of more than one club get a switch in the top bar (the club's name). It sets one
@@ -668,7 +666,7 @@ Ran: the functions on a local copy with both clubs' dinners, and the pages in Ch
 
 - [ ] **Events shows the club's dinners, coloured like the dinner map; Recos brings the recos back, same view.**
 - [ ] **A pin's popup lists every dinner at that restaurant; Menu opens the menu.**
-- [ ] **A member of both clubs switches club in the top bar: the Dinners pins and the home panel follow.**
+- [ ] **A member of both clubs switches club in the top bar: the Events pins, legend and the home panel follow.**
 - [ ] **A member of one club sees no switch.**
 
 #### Step 11: dinner calendar and replies
