@@ -145,6 +145,8 @@
         <h2 id="groups-heading">Brigadier groups</h2>
         <p class="muted">The standing teams that organise the dinners, usually two people, rarely three.
           Co-brigadiers shown on directory cards come from these groups.</p>
+        <p class="muted small">For a sponsor pair, set the godfather (the sponsor) and the godson: cards then show
+          "Godfather" and "Godson" instead of "Co-brigadier". Leave "Brigadier" for an ordinary group.</p>
         <p id="groups-loading" class="muted">Loading…</p>
         <p id="groups-empty" class="muted" hidden>No brigadier groups yet.</p>
         <ul id="groups-list" class="group-list" hidden></ul>
@@ -154,14 +156,32 @@
           <div class="field">
             <label for="group-member-1">Member 1</label>
             <select id="group-member-1" class="group-member"></select>
+            <label for="group-role-1" class="group-role-label">Role of member 1</label>
+            <select id="group-role-1" class="group-role">
+              <option value="">Brigadier</option>
+              <option value="0">Godfather</option>
+              <option value="1">Godson</option>
+            </select>
           </div>
           <div class="field">
             <label for="group-member-2">Member 2</label>
             <select id="group-member-2" class="group-member"></select>
+            <label for="group-role-2" class="group-role-label">Role of member 2</label>
+            <select id="group-role-2" class="group-role">
+              <option value="">Brigadier</option>
+              <option value="0">Godfather</option>
+              <option value="1">Godson</option>
+            </select>
           </div>
           <div class="field">
             <label for="group-member-3">Member 3 <span class="muted">(optional)</span></label>
             <select id="group-member-3" class="group-member"></select>
+            <label for="group-role-3" class="group-role-label">Role of member 3</label>
+            <select id="group-role-3" class="group-role">
+              <option value="">Brigadier</option>
+              <option value="0">Godfather</option>
+              <option value="1">Godson</option>
+            </select>
           </div>
           <div class="form-end">
             <button type="submit" class="button" id="group-submit">Create group</button>

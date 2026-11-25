@@ -102,12 +102,26 @@ create table if not exists public.club_profiles (
   created_on         timestamptz not null default now(),
   updated_on         timestamptz not null default now(),
   override_photo_path text,         -- this club's own photo (<profile id>/club-<club id>.jpg); null = main photo
+  member_number      integer,       -- the club's membership number (admins only)
+  club_role          text,          -- e.g. "Fondateur et président du Diner des Ronds" (admins only)
+  occupation         text,
+  other_clubs        text[] not null default '{}',
+  address            text,          -- home address; other members see it only when show_address
+  show_address       boolean not null default false,
   primary key (club_id, profile_id),
   constraint club_profiles_bio_length check (bio is null or char_length(bio) <= 500),
   constraint club_profiles_override_photo_path check (override_photo_path is null
-    or override_photo_path = profile_id::text || '/club-' || club_id::text || '.jpg')
+    or override_photo_path = profile_id::text || '/club-' || club_id::text || '.jpg'),
+  constraint club_profiles_member_number check (member_number is null or member_number > 0),
+  constraint club_profiles_text_lengths check (
+    char_length(coalesce(club_role, '')) <= 120 and char_length(coalesce(occupation, '')) <= 200
+    and char_length(coalesce(address, '')) <= 300),
+  constraint club_profiles_other_clubs check (
+    cardinality(other_clubs) <= 12 and char_length(array_to_string(other_clubs, '|')) <= 600)
 );
 create index if not exists club_profiles_profile_idx on public.club_profiles (profile_id);
+create unique index if not exists club_profiles_member_number_idx
+  on public.club_profiles (club_id, member_number) where member_number is not null;
 
 -- Brigadier groups: the standing teams (usually 2, rarely 3) that organise a club's dinners.
 -- Next step (not built yet): dinners.brigadier_group_id integer references brigadier_groups (id).
@@ -121,7 +135,9 @@ create table if not exists public.brigadier_group_members (
   group_id    integer not null references public.brigadier_groups (id) on delete cascade,
   profile_id  uuid    not null references public.profiles (id) on delete cascade,
   added_on    timestamptz not null default now(),
-  primary key (group_id, profile_id)
+  is_godson   smallint,   -- 0 = godfather (sponsor), 1 = godson, null = an ordinary brigadier group
+  primary key (group_id, profile_id),
+  constraint brigadier_group_members_is_godson check (is_godson in (0, 1))
 );
 create index if not exists brigadier_group_members_profile_idx on public.brigadier_group_members (profile_id);
 
@@ -391,6 +407,15 @@ set search_path = ''
 as $$
 begin
   new.bio := nullif(btrim(new.bio), '');
+  new.club_role := nullif(btrim(new.club_role), '');
+  new.occupation := nullif(btrim(new.occupation), '');
+  new.address := nullif(btrim(new.address), '');
+  new.other_clubs := coalesce(array(
+    select c from (select distinct on (lower(btrim(x))) btrim(x) as c, o
+                   from unnest(coalesce(new.other_clubs, '{}'::text[])) with ordinality as u(x, o)
+                   where btrim(coalesce(x, '')) <> ''
+                   order by lower(btrim(x)), o) d
+    order by o), '{}'::text[]);
   new.updated_on := now();
   if tg_op = 'INSERT' then
     new.created_on := now();
@@ -400,6 +425,8 @@ begin
   if current_user = 'authenticated' and not public.is_admin(old.club_id) then
     new.listed := old.listed;
     new.foreign_member := old.foreign_member;
+    new.member_number := old.member_number;
+    new.club_role := old.club_role;
   end if;
   new.club_id := old.club_id;
   new.profile_id := old.profile_id;
@@ -527,6 +554,30 @@ $$;
 -- them, and always for that club's admins. former_member = no access to this club any more.
 -- photo_path = the card's own photo for this club if it has one, otherwise the main photo.
 -- Returns nothing to people who are not members of the club.
+create or replace function public.member_relations(p_club integer, p_profile_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'profile_id', other.id,
+           'display_name', other.display_name,
+           'relation', case when theirs.is_godson = 1 and mine.is_godson = 0 then 'godson'
+                            when theirs.is_godson = 0 and mine.is_godson = 1 then 'godfather'
+                            else 'co_brigadier' end,
+           'group_id', g.id)
+         order by g.id, other.display_name), '[]'::jsonb)
+  from public.brigadier_groups g
+  join public.brigadier_group_members mine on mine.group_id = g.id and mine.profile_id = p_profile_id
+  join public.brigadier_group_members theirs on theirs.group_id = g.id and theirs.profile_id <> p_profile_id
+  join public.profiles other on other.id = theirs.profile_id
+  join public.club_profiles ocp on ocp.profile_id = other.id and ocp.club_id = p_club
+  where g.club_id = p_club
+    and ocp.listed;
+$$;
+
 create or replace function public.directory(p_club integer)
 returns table (
   profile_id     uuid,
@@ -537,7 +588,14 @@ returns table (
   phone          text,
   former_member  boolean,
   foreign_member boolean,
-  co_brigadiers  text[]
+  co_brigadiers  text[],
+  member_number  integer,
+  club_role      text,
+  occupation     text,
+  other_clubs    text[],
+  address        text,
+  private_fields text[],     -- admins only: of 'email', 'phone', 'address', those other members cannot see
+  relations      jsonb       -- [{ profile_id, display_name, relation: godson | godfather | co_brigadier, group_id }]
 )
 language sql
 stable
@@ -553,7 +611,18 @@ as $$
     case when cp.show_phone or public.is_admin(p_club) then p.phone end,
     not exists (select 1 from public.club_access a where a.club_id = p_club and a.email = p.email),
     cp.foreign_member,
-    public.co_brigadier_names(p_club, p.id)
+    public.co_brigadier_names(p_club, p.id),
+    cp.member_number,
+    cp.club_role,
+    cp.occupation,
+    cp.other_clubs,
+    case when cp.show_address or public.is_admin(p_club) then cp.address end,
+    case when public.is_admin(p_club) then
+      array_remove(array[case when not cp.show_email then 'email' end,
+                         case when not cp.show_phone then 'phone' end,
+                         case when not cp.show_address then 'address' end], null)
+    end,
+    public.member_relations(p_club, p.id)
   from public.club_profiles cp
   join public.profiles p on p.id = cp.profile_id
   where public.is_member(p_club)
@@ -805,7 +874,8 @@ $$;
 
 -- Creates a brigadier group in a club (p_group_id null) or replaces the members of one.
 -- Every member must have a card in that club. Returns the group id.
-create or replace function public.admin_save_brigadier_group(p_club integer, p_group_id integer, p_profile_ids uuid[])
+create or replace function public.admin_save_brigadier_group(p_club integer, p_group_id integer, p_profile_ids uuid[],
+                                                             p_is_godson smallint[] default null)
 returns integer
 language plpgsql
 volatile
@@ -825,6 +895,14 @@ begin
   if (select count(*) from public.club_profiles where club_id = p_club and profile_id = any (ids)) <> cardinality(ids) then
     raise exception 'Everyone in a brigadier group must have a card in this club. Reload and try again.' using errcode = '23503';
   end if;
+  if p_is_godson is not null then
+    if cardinality(p_is_godson) <> cardinality(p_profile_ids) then
+      raise exception 'Godfather / godson values must match the members.' using errcode = '22023';
+    end if;
+    if exists (select 1 from unnest(p_is_godson) v where v is not null and v not in (0, 1)) then
+      raise exception 'Godfather / godson must be 0, 1 or empty.' using errcode = '22023';
+    end if;
+  end if;
 
   if gid is null then
     insert into public.brigadier_groups (club_id) values (p_club) returning id into gid;
@@ -836,6 +914,14 @@ begin
   insert into public.brigadier_group_members (group_id, profile_id)
   select gid, x from unnest(ids) as x
   on conflict do nothing;
+
+  if p_is_godson is not null then
+    update public.brigadier_group_members m
+    set is_godson = v.r
+    from (select distinct on (x) x, r from unnest(p_profile_ids, p_is_godson) with ordinality as u(x, r, o)
+          where x is not null order by x, o) v
+    where m.group_id = gid and m.profile_id = v.x;
+  end if;
 
   return gid;
 end;
@@ -943,11 +1029,13 @@ grant select on table public.clubs, public.club_access, public.super_admins, pub
   to authenticated;
 grant update (needs_profile)                                            on table public.club_access   to authenticated;
 grant update (display_name, phone, photo_path)                          on table public.profiles      to authenticated;
-grant update (bio, show_email, show_phone, listed, foreign_member, override_photo_path) on table public.club_profiles to authenticated;
+grant update (bio, show_email, show_phone, listed, foreign_member, override_photo_path,
+              occupation, other_clubs, address, show_address, member_number, club_role) on table public.club_profiles to authenticated;
 
 -- every function: nothing for public or anon
 revoke execute on function public.current_confirmed_email()                         from public, anon, authenticated;
 revoke execute on function public.co_brigadier_names(integer, uuid)                 from public, anon, authenticated;
+revoke execute on function public.member_relations(integer, uuid)                   from public, anon, authenticated;
 revoke execute on function public.club_access_before_insert()                       from public, anon, authenticated;
 revoke execute on function public.club_access_protect_admins()                      from public, anon, authenticated;
 revoke execute on function public.profiles_before_write()                           from public, anon, authenticated;
@@ -969,7 +1057,7 @@ revoke execute on function public.admin_remove_access(integer, text, boolean)   
 revoke execute on function public.admin_remove_from_club_preview(integer, text)     from public, anon;
 revoke execute on function public.admin_remove_from_club(integer, text, boolean)    from public, anon;
 revoke execute on function public.admin_change_email(text, text)                    from public, anon;
-revoke execute on function public.admin_save_brigadier_group(integer, integer, uuid[]) from public, anon;
+revoke execute on function public.admin_save_brigadier_group(integer, integer, uuid[], smallint[]) from public, anon;
 revoke execute on function public.admin_delete_brigadier_group(integer, integer)    from public, anon;
 
 -- signed-in people (row-level security and the checks inside each function still decide)
@@ -990,7 +1078,7 @@ grant execute on function public.admin_remove_access(integer, text, boolean)    
 grant execute on function public.admin_remove_from_club_preview(integer, text)     to authenticated;
 grant execute on function public.admin_remove_from_club(integer, text, boolean)    to authenticated;
 grant execute on function public.admin_change_email(text, text)                    to authenticated;
-grant execute on function public.admin_save_brigadier_group(integer, integer, uuid[]) to authenticated;
+grant execute on function public.admin_save_brigadier_group(integer, integer, uuid[], smallint[]) to authenticated;
 grant execute on function public.admin_delete_brigadier_group(integer, integer)    to authenticated;
 
 -- ---------------------------------------------------------------------------

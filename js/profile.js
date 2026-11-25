@@ -19,7 +19,9 @@
   // Shared profile (same in every club) + this club's card (bio, visibility, admin settings).
   var PROFILE_FIELDS = 'id, email, member_id, display_name, phone, photo_path';
   // override_photo_path = this club's own photo, shown here instead of the main one (null = main photo)
-  var CARD_FIELDS = 'bio, show_email, show_phone, listed, foreign_member, member_updated_on, override_photo_path';
+  var CARD_FIELDS = 'bio, show_email, show_phone, listed, foreign_member, member_updated_on, override_photo_path, ' +
+    'occupation, other_clubs, address, show_address, member_number, club_role';
+  var LANG = window.NinesI18n ? window.NinesI18n.lang : 'en';
 
   var form = document.getElementById('profile-form');
   var nameInput = document.getElementById('display-name');
@@ -31,6 +33,12 @@
   var photoPreview = document.getElementById('photo-preview');
   var showEmail = document.getElementById('show-email');
   var showPhone = document.getElementById('show-phone');
+  var showAddress = document.getElementById('show-address');
+  var occupationInput = document.getElementById('occupation');
+  var clubsInput = document.getElementById('other-clubs');
+  var addressInput = document.getElementById('address');
+  var numberInput = document.getElementById('member-number');
+  var roleInput = document.getElementById('club-role');
   var adminRows = document.getElementById('admin-rows');
   var listed = document.getElementById('listed');
   var foreign = document.getElementById('foreign');
@@ -54,6 +62,17 @@
     coBrigadiers: []      // names of listed co-brigadiers, for the preview
   };
 
+  // "Travellers Club, Polo de Paris" -> ["Travellers Club", "Polo de Paris"] (blanks and repeats removed)
+  function parseClubs(text) {
+    var seen = {};
+    return String(text || '').split(/[,;\n]/).map(function (c) { return c.trim(); }).filter(function (c) {
+      var k = c.toLowerCase();
+      if (!c || seen[k]) return false;
+      seen[k] = true;
+      return true;
+    });
+  }
+
   function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
   function showStatus(text) { errorBox.textContent = ''; statusBox.textContent = text || ''; }
 
@@ -70,7 +89,11 @@
       display_name: nameInput.value.trim() || 'Your name',
       bio: bioInput.value.trim(),
       email: showEmail.checked && state.profile ? state.profile.email : null,
-      phone: showPhone.checked && PHONE_RE.test(phoneInput.value.trim()) ? phoneInput.value.trim() : null,
+      phone: showPhone.checked && PHONE_RE.test(phoneInput.value.trim()) ? P.normalizePhone(phoneInput.value, LANG) : null,
+      address: showAddress.checked ? addressInput.value.trim() : null,
+      occupation: occupationInput.value.trim(),
+      other_clubs: parseClubs(clubsInput.value),
+      club_role: roleInput.value.trim(),
       former_member: !state.hasAccess,
       foreign_member: foreign.checked,
       co_brigadiers: state.coBrigadiers
@@ -119,7 +142,7 @@
     photoInput.focus();
   });
 
-  [nameInput, bioInput, phoneInput, showEmail, showPhone, listed, foreign].forEach(function (input) {
+  [nameInput, bioInput, phoneInput, showEmail, showPhone, showAddress, occupationInput, clubsInput, addressInput, roleInput, listed, foreign].forEach(function (input) {
     input.addEventListener('input', updatePreview);
     input.addEventListener('change', updatePreview);
   });
@@ -128,7 +151,12 @@
     event.preventDefault();
     var name = nameInput.value.trim();
     var bio = bioInput.value.trim();
-    var phone = phoneInput.value.trim();
+    var phone = P.normalizePhone(phoneInput.value, LANG);
+    var occupation = occupationInput.value.trim();
+    var clubs = parseClubs(clubsInput.value);
+    var address = addressInput.value.trim();
+    var numberText = numberInput.value.trim();
+    var clubRole = roleInput.value.trim();
 
     if (!name) { showError('Please enter a display name.'); nameInput.focus(); return; }
     if (name.length > 80) { showError('Please keep the display name to 80 characters or fewer.'); nameInput.focus(); return; }
@@ -141,6 +169,14 @@
     if (showPhone.checked && !phone) {
       showError('Add a phone number, or untick the "show phone number" box.');
       phoneInput.focus();
+      return;
+    }
+    if (occupation.length > 200) { showError('Please keep the occupation to 200 characters or fewer.'); occupationInput.focus(); return; }
+    if (clubs.length > 12 || clubs.join('|').length > 600) { showError('Please list at most 12 other clubs.'); clubsInput.focus(); return; }
+    if (address.length > 300) { showError('Please keep the address to 300 characters or fewer.'); addressInput.focus(); return; }
+    if (state.isAdmin && numberText && !/^[1-9][0-9]{0,5}$/.test(numberText)) {
+      showError('The member number must be a whole number, for example 42.');
+      numberInput.focus();
       return;
     }
 
@@ -172,11 +208,14 @@
       if (!shared.data || shared.data.length !== 1) throw new Error('The profile could not be saved. Please reload and try again.');
 
       // this club's card
-      var cardRow = { bio: bio || null, show_email: showEmail.checked, show_phone: showPhone.checked };
+      var cardRow = { bio: bio || null, show_email: showEmail.checked, show_phone: showPhone.checked, show_address: showAddress.checked,
+                      occupation: occupation || null, other_clubs: clubs, address: address || null };
       if (clearClubPhoto) cardRow.override_photo_path = null;
       if (state.isAdmin) {
         cardRow.listed = listed.checked;
         cardRow.foreign_member = foreign.checked;
+        cardRow.member_number = numberText ? Number(numberText) : null;
+        cardRow.club_role = clubRole || null;
       }
       var card = await client.from('club_profiles').update(cardRow)
         .eq('club_id', club.id).eq('profile_id', id).select(CARD_FIELDS);
@@ -211,6 +250,8 @@
     }
     if (/profiles_phone_shape/.test(msg)) return 'That phone number has characters we cannot use.';
     if (/bio_length/.test(msg)) return 'Please keep the bio to 500 characters or fewer.';
+    if (/member_number_idx|duplicate key/.test(msg)) return 'That member number is already used in this club.';
+    if (/club_profiles_text_lengths|club_profiles_other_clubs/.test(msg)) return 'One of the fields is too long. Please shorten it.';
     if (/display_name/.test(msg)) return 'Please enter a display name of 1 to 80 characters.';
     if (/payload too large|exceeded the maximum/i.test(msg)) return 'That photo is too large. Please try another one.';
     return 'Could not save. ' + N.friendlyError(error);
@@ -291,9 +332,15 @@
 
     nameInput.value = profile.display_name || '';
     bioInput.value = profile.bio || '';
-    phoneInput.value = profile.phone || '';
+    phoneInput.value = profile.phone ? (LANG === 'fr' ? P.formatPhone(profile.phone) : profile.phone) : '';
+    occupationInput.value = profile.occupation || '';
+    clubsInput.value = (profile.other_clubs || []).join(', ');
+    addressInput.value = profile.address || '';
+    numberInput.value = profile.member_number || '';
+    roleInput.value = profile.club_role || '';
     showEmail.checked = !!profile.show_email;
     showPhone.checked = !!profile.show_phone;
+    showAddress.checked = !!profile.show_address;
     listed.checked = profile.listed !== false;
     foreign.checked = !!profile.foreign_member;
     adminRows.hidden = !state.isAdmin;
@@ -314,12 +361,13 @@
       back.textContent = 'Back to admin';
       back.setAttribute('href', N.withClub('admin.html', club));
       document.getElementById('show-email-text').textContent = 'Show email to other members';
-      document.getElementById('show-phone-text').textContent = 'Show phone number to other members';
+      document.getElementById('show-phone-text').textContent = 'Show mobile to other members';
+      document.getElementById('show-address-text').textContent = 'Show home address to other members';
       if (new URLSearchParams(window.location.search).get('new') === '1') {
         showStatus('Member added: ' + who + '. Add a bio, phone or photo below, or leave it as it is.');
       }
     } else if (!profile.member_updated_on) {
-      showStatus('Welcome! Check your profile and press "Save profile". Email and phone stay hidden unless you tick the boxes.');
+      showStatus('Welcome! Check your profile and press "Save profile". Other members only see the email, mobile and home address you tick below.');
     }
 
     var backLink = document.getElementById('back-link');

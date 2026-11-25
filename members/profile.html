@@ -89,9 +89,25 @@
           </div>
 
           <div class="field">
-            <label for="phone">Phone <span class="muted">(optional)</span></label>
+            <label for="phone">Mobile <span class="muted">(optional)</span></label>
             <input id="phone" type="tel" autocomplete="tel" maxlength="30" inputmode="tel" aria-describedby="phone-hint">
             <p id="phone-hint" class="hint">Digits, spaces and + ( ) - . only, for example +44 7700 900123.</p>
+          </div>
+
+          <div class="field">
+            <label for="occupation">Occupation <span class="muted">(optional)</span></label>
+            <input id="occupation" type="text" maxlength="200" autocomplete="organization-title">
+          </div>
+
+          <div class="field">
+            <label for="other-clubs">Other clubs <span class="muted">(optional)</span></label>
+            <input id="other-clubs" type="text" maxlength="600" aria-describedby="other-clubs-hint">
+            <p id="other-clubs-hint" class="hint">Separate clubs with commas, for example: Travellers Club, Polo de Paris.</p>
+          </div>
+
+          <div class="field">
+            <label for="address">Home address <span class="muted">(optional)</span></label>
+            <textarea id="address" rows="2" maxlength="300" autocomplete="street-address"></textarea>
           </div>
 
           <fieldset class="field">
@@ -116,8 +132,13 @@
             </label>
             <label class="check">
               <input id="show-phone" type="checkbox">
-              <span id="show-phone-text">Show my phone number to other members</span>
+              <span id="show-phone-text">Show my mobile to other members</span>
             </label>
+            <label class="check">
+              <input id="show-address" type="checkbox">
+              <span id="show-address-text">Show my home address to other members</span>
+            </label>
+            <p class="hint">The club's admins can always see them.</p>
           </fieldset>
 
           <fieldset class="field" id="admin-rows" hidden>
@@ -130,6 +151,14 @@
               <input id="foreign" type="checkbox">
               <span>Foreign member <span class="muted">(moved abroad: shown with a label, and left out of club emails)</span></span>
             </label>
+            <div class="field">
+              <label for="member-number">Member number <span class="muted">(optional)</span></label>
+              <input id="member-number" type="text" inputmode="numeric" maxlength="6" pattern="[0-9]*">
+            </div>
+            <div class="field">
+              <label for="club-role">Club role <span class="muted">(optional, for example Treasurer)</span></label>
+              <input id="club-role" type="text" maxlength="120">
+            </div>
           </fieldset>
 
           <button type="submit" class="button" id="save-button">Save profile</button>

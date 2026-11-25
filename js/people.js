@@ -49,8 +49,29 @@
     return list.slice(0, -1).join(', ') + ' & ' + list[list.length - 1];
   }
 
+  // Relation codes from the database -> label (translated on the French site).
+  var RELATION = { godson: 'Godson:', godfather: 'Godfather:', co_brigadier: 'Co-brigadier:' };
+
+  // Phone helpers. French numbers are stored as +33 6 12 34 56 78 -> "+33612345678" and shown in the
+  // French way, "06 12 34 56 78"; other numbers are shown as stored.
+  function dialNumber(phone) { return String(phone || '').replace(/[^0-9+]/g, ''); }
+  function formatPhone(phone) {
+    var d = dialNumber(phone);
+    if (/^\+33[1-9]\d{8}$/.test(d)) return ('0' + d.slice(3)).replace(/(\d{2})(?=\d)/g, '$1 ');
+    return String(phone || '');
+  }
+  // On the French site, a French number typed as "06 12 34 56 78" is stored as "+33612345678".
+  function normalizePhone(phone, lang) {
+    var text = String(phone || '').trim();
+    var d = text.replace(/[\s.()-]/g, '');
+    if (lang === 'fr' && /^0[1-9]\d{8}$/.test(d)) return '+33' + d.slice(1);
+    if (/^\+33[1-9]\d{8}$/.test(d)) return d;
+    return text;
+  }
+
   // Builds a member card. person = { display_name, bio, email, phone, former_member, foreign_member,
-  // co_brigadiers }, photoUrl = signed link or null.
+  // co_brigadiers, club_role, occupation, other_clubs, address, private_fields, relations },
+  // photoUrl = signed link or null.
   // All text goes in with textContent; links are built from validated values only.
   function renderCard(person, photoUrl, options) {
     var el = N.el;
@@ -82,27 +103,61 @@
     if (person.former_member) labels.push(el('span', { className: 'card-label', text: 'Former member' }));
     if (person.foreign_member) labels.push(el('span', { className: 'card-label', text: 'Foreign member' }));
     if (labels.length) details.appendChild(el('p', { className: 'card-labels' }, labels));
+    if (person.club_role) details.appendChild(el('p', { className: 'card-role', 'data-no-i18n': true, text: person.club_role }));
+    if (person.occupation) details.appendChild(el('p', { className: 'card-occupation', 'data-no-i18n': true, text: person.occupation }));
+    var clubs = (person.other_clubs || []).filter(Boolean);
+    if (clubs.length) {
+      details.appendChild(el('ul', { className: 'card-tags', 'aria-label': 'Other clubs' }, clubs.map(function (c) {
+        return el('li', { className: 'tag', 'data-no-i18n': true, text: c });
+      })));
+    }
     if (person.bio) details.appendChild(el('p', { className: 'card-bio', 'data-no-i18n': true, text: person.bio }));
-    if (person.co_brigadiers && person.co_brigadiers.length) {
+
+    // Home, mobile, email. Admins also get a discreet marker on what other members cannot see
+    // (private_fields comes from the database, for admins only).
+    var hidden = person.private_fields || [];
+    var contact = el('ul', { className: 'card-contact' });
+    function contactRow(field, label, value) {
+      var row = el('li', { className: 'contact-row' }, [el('span', { className: 'contact-label', text: label + ' ' }), value]);
+      if (hidden.indexOf(field) !== -1) {
+        row.appendChild(el('span', { className: 'private-marker', title: 'Other members cannot see this', text: 'Hidden from members' }));
+      }
+      contact.appendChild(row);
+    }
+    if (person.address) contactRow('address', 'Home:', el('span', { className: 'contact-address', 'data-no-i18n': true, text: person.address }));
+    if (person.phone) {
+      var dial = dialNumber(person.phone);
+      if (dial.length >= 5) contactRow('phone', 'Mobile:', el('a', { href: 'tel:' + dial, 'data-no-i18n': true, text: formatPhone(person.phone) }));
+    }
+    if (person.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(person.email)) {
+      contactRow('email', 'Email:', el('a', { href: 'mailto:' + encodeURIComponent(person.email).replace(/%40/g, '@'), 'data-no-i18n': true, text: person.email }));
+    }
+    if (contact.children.length) details.appendChild(contact);
+
+    // Related members: from the database's relation codes (directory), else plain co-brigadier names
+    // (profile preview). One line per person and relation.
+    if (Array.isArray(person.relations)) {
+      var seen = {};
+      var rels = person.relations.filter(function (r) {
+        var k = (RELATION[r.relation] ? r.relation : 'co_brigadier') + '|' + r.display_name;
+        if (!r.display_name || seen[k]) return false;
+        seen[k] = true;
+        return true;
+      });
+      if (rels.length) {
+        details.appendChild(el('ul', { className: 'card-relations' }, rels.map(function (r) {
+          return el('li', null, [
+            el('span', { className: 'muted', text: (RELATION[r.relation] || RELATION.co_brigadier) + ' ' }),
+            el('span', { 'data-no-i18n': true, text: r.display_name })
+          ]);
+        })));
+      }
+    } else if (person.co_brigadiers && person.co_brigadiers.length) {
       details.appendChild(el('p', { className: 'card-brigadiers' }, [
         el('span', { className: 'muted', text: (person.co_brigadiers.length === 1 ? 'Co-brigadier: ' : 'Co-brigadiers: ') }),
         joinNames(person.co_brigadiers)
       ]));
     }
-
-    var contact = el('ul', { className: 'card-contact' });
-    if (person.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(person.email)) {
-      contact.appendChild(el('li', null, [
-        el('a', { href: 'mailto:' + encodeURIComponent(person.email).replace(/%40/g, '@'), text: person.email })
-      ]));
-    }
-    if (person.phone) {
-      var dial = String(person.phone).replace(/[^0-9+]/g, '');
-      if (dial.length >= 5) {
-        contact.appendChild(el('li', null, [el('a', { href: 'tel:' + dial, text: person.phone })]));
-      }
-    }
-    if (contact.children.length) details.appendChild(contact);
 
     return el('article', { className: 'member-card' }, [avatar, details]);
   }
@@ -185,6 +240,8 @@
     clubPhotoPathFor: clubPhotoPathFor,
     signedPhotoUrls: signedPhotoUrls,
     renderCard: renderCard,
+    formatPhone: formatPhone,
+    normalizePhone: normalizePhone,
     processPhoto: processPhoto,
     uploadPhoto: uploadPhoto,
     removePhoto: removePhoto,

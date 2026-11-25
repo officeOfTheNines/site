@@ -496,8 +496,34 @@ textarea:focus-visible, input[type="search"]:focus-visible, input[type="tel"]:fo
   min-height: var(--touch);
   overflow-wrap: anywhere;
 }
+/* directory details: club role, occupation, other clubs, labelled contact rows, related members */
+.card-role { margin: 0 0 2px; color: var(--brass); font-weight: 600; font-size: 0.9rem; overflow-wrap: anywhere; }
+.card-occupation { margin: 0 0 8px; overflow-wrap: anywhere; }
+.card-tags { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; }
+.card-tags .tag {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--page);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.contact-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; }
+.contact-label { color: var(--muted); font-size: 0.9rem; }
+.contact-address { padding: 6px 0; overflow-wrap: anywhere; }
+.private-marker {
+  font-size: 0.72rem;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.card-relations { list-style: none; margin: 8px 0 0; padding: 0; overflow-wrap: anywhere; }
+.card-relations li { margin: 2px 0; }
 @media (max-width: 400px) {
   .member-card { flex-direction: column; align-items: center; text-align: center; }
+  .card-tags, .contact-row { justify-content: center; }
 }
 
 .profile-layout {
@@ -598,6 +624,7 @@ fieldset.field legend { font-weight: 500; margin-bottom: 8px; }
 .group-list .group-number { color: var(--muted); font-size: 0.9rem; margin-right: 8px; }
 .group-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; align-items: end; }
 .group-form .field { margin-bottom: 0; }
+.group-form .group-role-label { margin-top: 8px; font-size: 0.9rem; color: var(--muted); }
 .group-form .form-end { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .group-form .form-title { grid-column: 1 / -1; margin: 0; font-family: var(--font-body); font-size: 1.05rem; font-weight: 600; }
 @media (max-width: 720px) { .group-form { grid-template-columns: 1fr; } }
