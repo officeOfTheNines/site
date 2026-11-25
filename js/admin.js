@@ -650,6 +650,22 @@
     await refresh();
   }
 
+  // Collapsible sections: each admin's open / closed choice is remembered in this browser only
+  // (failures ignored: everything simply opens).
+  (function () {
+    var KEY = 'nines.admin.closedSections';
+    var closed = [];
+    try { closed = JSON.parse(window.localStorage.getItem(KEY) || '[]') || []; } catch (e) { closed = []; }
+    document.querySelectorAll('details.section-toggle[data-section]').forEach(function (d) {
+      if (closed.indexOf(d.dataset.section) !== -1) d.open = false;
+      d.addEventListener('toggle', function () {
+        closed = closed.filter(function (k) { return k !== d.dataset.section; });
+        if (!d.open) closed.push(d.dataset.section);
+        try { window.localStorage.setItem(KEY, JSON.stringify(closed)); } catch (e) { /* not remembered */ }
+      });
+    });
+  })();
+
   // Super admins see who the other super admins are (the database returns nothing to anyone else).
   async function loadSuperAdmins() {
     var result = await client.from('super_admins').select('email').order('email', { ascending: true });
