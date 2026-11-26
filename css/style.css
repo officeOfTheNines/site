@@ -938,23 +938,24 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .pin--silver .pin-dot { background: var(--silver); }
 .pin--bronze .pin-dot { background: var(--bronze); }
 .pin--tbc .pin-dot { background: var(--border); color: var(--muted); font-size: 0.8rem; }
-/* Season winner: gold ring (2px gap in the map's dark colour, 1px gold) with four spikes, around the
-   unchanged 28px dot; footprint 28 + 2 x 3 + 2 x 5 = 44px, the pin's own size. Badge: season number,
-   17px, on the dot's top-right edge, only when zoomed in (.show-season-badges on the map). */
+/* Season winner: gold ring around the unchanged 28px dot. The dot's own 2px dark outline is the gap: the
+   ring (1px gold) sits right against it, so 2px of dark show between the gold disc and the ring. Four 5px
+   spikes outside; footprint 30 + 2 + 2 x 5 = 42px. Badge: season number, 17px, on the dot's top-right edge,
+   only when zoomed in (.show-season-badges on the map). */
 .pin-ring {
-  position: absolute; left: 5px; top: 5px; width: 34px; height: 34px; box-sizing: border-box; border-radius: 50%;
+  position: absolute; left: 7px; top: 7px; width: 30px; height: 30px; box-sizing: border-box; border-radius: 50%;
   border: 1px solid var(--gold); background: var(--page); pointer-events: none;
 }
-.pin-ring + .pin-dot { position: relative; }
+.pin-ring + .pin-dot { position: relative; box-shadow: none; }   /* no drop shadow over the ring */
 .pin-spike {
   position: absolute; left: 50%; top: 50%; width: 0; height: 0;
   border-left: 2.25px solid transparent; border-right: 2.25px solid transparent; border-bottom: 5px solid var(--gold);
   transform-origin: 0 0;
 }
-.pin-spike:nth-child(1) { transform: rotate(0deg) translate(-2.25px, -22px); }
-.pin-spike:nth-child(2) { transform: rotate(90deg) translate(-2.25px, -22px); }
-.pin-spike:nth-child(3) { transform: rotate(180deg) translate(-2.25px, -22px); }
-.pin-spike:nth-child(4) { transform: rotate(270deg) translate(-2.25px, -22px); }
+.pin-spike:nth-child(1) { transform: rotate(0deg) translate(-2.25px, -20px); }
+.pin-spike:nth-child(2) { transform: rotate(90deg) translate(-2.25px, -20px); }
+.pin-spike:nth-child(3) { transform: rotate(180deg) translate(-2.25px, -20px); }
+.pin-spike:nth-child(4) { transform: rotate(270deg) translate(-2.25px, -20px); }
 .pin-badge {
   display: none; position: absolute; left: 23px; top: 3px; width: 17px; height: 17px; box-sizing: border-box;
   align-items: center; justify-content: center; border-radius: 50%;
