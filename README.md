@@ -194,10 +194,15 @@ unchanged.
   ignores case and accents, and only ever sees the recos the member is allowed to see. Words starting
   with `#` are reserved for tags, once recos have them.
 - **Long-press the map** (about half a second; right-click or a long mouse press on a computer) to add a
-  reco at that spot. The page suggests the nearest restaurant from OpenStreetMap, or leaves the name
+  reco at that spot, on desktop and tablet only. On phones (700 px wide or less) recos are added with the **+**
+  button only, so a double-tap or a held tap only ever zooms. The page suggests the nearest restaurant from OpenStreetMap, or leaves the name
   empty to type. A press next to an existing reco (within about 40 m) offers to add to it instead. Moving
   the finger or a second finger (pinch) cancels the press, so dragging and zooming still work.
-- A **tip** about long-press shows on the first visit until it is dismissed (remembered in the browser).
+- A **tip** about long-press (on phones: about the + button) shows on the first visit until it is dismissed
+  (remembered in the browser).
+- **Zoom on phones**: no + / − buttons (same 700 px breakpoint); pinch and double-tap zoom, both switched on
+  explicitly. "Find me" stays in the right-hand column, moved up into the freed space. Desktop and tablet keep
+  the + / − buttons.
 
 #### Recent activity and the My clubs / All clubs toggle (step 9)
 
@@ -295,6 +300,15 @@ unchanged.
   (the coordinates when the name or address is missing). It opens in a new tab. No API key, no Google Places.
 - **Copy address** is on the public dinner maps only (it copies "name, address, postcode"); the member map's
   Reco and Dinner cards show the address and Directions, without it.
+
+#### Links into the member map
+
+- `recos.html?venue=<venue id>` (home activity feed): that reco, centred, with its card open.
+- `recos.html?view=dinners&dinner=<club_event id>&club=<club id>` (home dinner panel: the venue in "Our last
+  dinner at …" and in the next-dinner tile): the Dinners view of that club (a member of several clubs is
+  switched to it), centred and zoomed (zoom 17) on that dinner's pin, with its card open (bottom sheet on phones,
+  popup on wider screens). Ids only, never names or personal data. If the dinner is not on the member's map, the
+  Dinners view opens as usual, without an error. The map's back button and the browser's back return home.
 
 #### Cards on phones: bottom sheet (member map)
 

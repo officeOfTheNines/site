@@ -22,7 +22,10 @@
   // Where the back arrow goes: this club's member home (club news and recent activity).
   // Change it here if the home page moves.
   var BACK_URL = 'index.html';
-  var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there
+  var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there (not on phones: + only)
+  // Phones: the same breakpoint as the card sheet (700px). No + / − buttons (pinch and double-tap zoom) and
+  // no adding by long-press, so a double-tap or a held tap only ever zooms.
+  function isPhone() { return window.matchMedia('(max-width: 700px)').matches; }
   var PRESS_SLOP_PX = 8;     // moving further than this cancels the press (it is a drag)
   var NEARBY_M = 40;         // a long-press this close to a pin offers to add to that restaurant
   var TIP_KEY = 'nines.recos.longPressTipDismissed';
@@ -621,7 +624,7 @@
       if (press && e.pointerId !== press.id) { cancel(); return; } // a second finger: a pinch
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.target.closest('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
-      if (mode === 'events') return;
+      if (mode === 'events' || isPhone()) return;   // phones add with the + button only
       cancel();
       var x = e.clientX, y = e.clientY;
       press = { id: e.pointerId, x: x, y: y, timer: setTimeout(function () {
@@ -641,7 +644,7 @@
     });
     map.on('movestart zoomstart', cancel);
     // right-click on a computer; some phones also send this after a long-press (ignored as a repeat)
-    map.on('contextmenu', function (e) { cancel(); addAt(e.latlng); });
+    map.on('contextmenu', function (e) { cancel(); if (!isPhone()) addAt(e.latlng); });
   }
 
   // ---- First-visit tip ----
@@ -657,9 +660,9 @@
   function showTip() {
     if (!canAdd || tipDismissed()) return;
     var desktop = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    document.getElementById('recos-tip-text').textContent = desktop
-      ? 'Tip: right-click (or long-press) the map to add a reco.'
-      : 'Tip: long-press the map to add a reco.';
+    document.getElementById('recos-tip-text').textContent = isPhone()
+      ? 'Tip: press + to add a reco.'
+      : desktop ? 'Tip: right-click (or long-press) the map to add a reco.' : 'Tip: long-press the map to add a reco.';
     tipNode.hidden = false;
   }
 
@@ -884,6 +887,19 @@
     showCard(marker);
   }
 
+  // Centre and zoom on the pin of one dinner (by its club_event id) and open its card; false if the dinner
+  // is not on this map (not the member's club, hidden, or no venue).
+  var LINK_ZOOM = 17;   // close enough that neighbouring pins (e.g. on Charlotte Street) no longer touch
+  function openDinner(eventId) {
+    var v = dinnerVenues.find(function (x) { return x.dinners.some(function (d) { return d.event_id === eventId; }); });
+    var marker = v && dinnerMarkers[v.id];
+    if (!marker) return false;
+    if (!map.hasLayer(marker)) { searchInput.value = ''; applyEventsFilter(); }
+    map.setView(marker.getLatLng(), Math.max(map.getZoom(), LINK_ZOOM), { animate: false });
+    showCard(marker);
+    return true;
+  }
+
   function fitDinners() {
     if (dinnerVenues.length) {
       map.fitBounds(L.latLngBounds(dinnerVenues.map(function (v) { return [v.lat, v.lng]; })), { padding: [48, 48], maxZoom: 15 });
@@ -1102,7 +1118,8 @@
       });
     }
     N.showState('ready');
-    map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    // pinch and double-tap zoom on (the only zoom on phones, where the + / − buttons are hidden by CSS)
+    map = L.map('recos-map', { zoomControl: false, touchZoom: true, doubleClickZoom: true }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
     cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map) : null;   // phone cards
     map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
     showBadgesForZoom();
@@ -1114,13 +1131,23 @@
     updateVisibilityText();
     updateCount();
     buildScoreButtons();
-    // opened from the home feed: recos.html?venue=<id> centres that reco with its card open
-    var linked = new URLSearchParams(window.location.search).get('venue');
-    var startMode = linked ? 'recos' : readMode();
+    // Links into the map (ids only, never names or personal data):
+    //   recos.html?venue=<id>                                (home feed) that reco, centred, card open
+    //   recos.html?view=dinners&dinner=<club_event id>&club=<club id>   (home dinner panel) the Dinners view
+    //       of that club, centred and zoomed on that dinner's pin with its card open; if the dinner is not
+    //       on the member's map, the Dinners view opens as usual, without an error.
+    var params = new URLSearchParams(window.location.search);
+    var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var linked = params.get('venue');
+    var linkedDinner = params.get('view') === 'dinners' && UUID.test(params.get('dinner') || '') ? params.get('dinner') : null;
+    var linkedClub = /^[0-9]+$/.test(params.get('club') || '') ? Number(params.get('club')) : null;
+    if (params.get('view') === 'dinners' && linkedClub && window.NinesClubSwitch) window.NinesClubSwitch.set(linkedClub);
+    var startMode = params.get('view') === 'dinners' ? 'events' : linked ? 'recos' : readMode();
     if (startMode === 'recos') showTip();
-    refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null).then(function () {
-      if (startMode === 'events') setMode('events', true);
-      else saveMode('recos');
+    refresh(UUID.test(linked || '') ? linked : null).then(async function () {
+      if (startMode !== 'events') { saveMode('recos'); return; }
+      await setMode('events', !linkedDinner);
+      if (linkedDinner && !openDinner(linkedDinner)) fitDinners();
     });
     // the current club (members of several clubs): its dinners and scale, in place
     if (window.NinesClubSwitch) {

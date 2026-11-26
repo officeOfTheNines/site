@@ -6,6 +6,8 @@
 //   NinesClubSwitch.get()          the current club: { club_id, name, site_url, role, ... }
 //   NinesClubSwitch.onChange(fn)   pages that follow the current club in place (home, Recos map);
 //                                  on other pages, switching opens the same page for that club.
+//   NinesClubSwitch.set(clubId)    make one of the member's clubs current without notifying the page
+//                                  (a link that names its club, e.g. the map's ?club=); false if not theirs.
 (function () {
   'use strict';
 
@@ -37,6 +39,12 @@
   }
 
   function get() { return current || fallback(); }
+  function set(clubId) {
+    var club = myClubs().find(function (c) { return c.club_id === Number(clubId); });
+    if (!club) return false;
+    if (club.club_id !== get().club_id) { current = club; store(club.club_id); paint(); }
+    return true;
+  }
   function onChange(fn) { handlers.push(fn); }
 
   function choose(club) {
@@ -96,5 +104,5 @@
     document.querySelectorAll('[data-club-switch]').forEach(render);
   }
 
-  window.NinesClubSwitch = { mount: mount, get: get, onChange: onChange };
+  window.NinesClubSwitch = { mount: mount, get: get, set: set, onChange: onChange };
 })();
