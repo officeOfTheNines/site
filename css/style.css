@@ -926,7 +926,7 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
   .club-switch-bar .club-switch-button { max-width: 86px; padding: 0 8px; font-size: 0.85rem; }
 }
 
-/* ---------- Recos map, Events mode: the club's dinners (pins and legend as on the dinner maps) ---------- */
+/* ---------- Recos map, Dinners view: the club's dinners (pins as on the dinner maps, season-winner ring and badge) ---------- */
 .pin { display: flex; align-items: center; justify-content: center; border-radius: 50%; cursor: pointer; }
 .pin-dot {
   width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--page);
@@ -938,29 +938,32 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .pin--silver .pin-dot { background: var(--silver); }
 .pin--bronze .pin-dot { background: var(--bronze); }
 .pin--tbc .pin-dot { background: var(--border); color: var(--muted); font-size: 0.8rem; }
-/* the season's best dinner: a star in the same colour, the score inside */
-.pin--star { filter: drop-shadow(0 0 1.5px var(--page)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6)); }
-.pin--star .pin-dot {
-  width: 40px; height: 40px; border: 0; border-radius: 0; box-shadow: none; padding-top: 5px; font-size: 0.66rem;
-  clip-path: polygon(50% 0%, 61.8% 35.4%, 100% 38.2%, 69.1% 61.8%, 80.9% 100%, 50% 76.4%, 19.1% 100%, 30.9% 61.8%, 0% 38.2%, 38.2% 35.4%);
+/* Season winner: gold ring (2px gap in the map's dark colour, 1px gold) with four spikes, around the
+   unchanged 28px dot; footprint 28 + 2 x 3 + 2 x 5 = 44px, the pin's own size. Badge: season number,
+   17px, on the dot's top-right edge, only when zoomed in (.show-season-badges on the map). */
+.pin-ring {
+  position: absolute; left: 5px; top: 5px; width: 34px; height: 34px; box-sizing: border-box; border-radius: 50%;
+  border: 1px solid var(--gold); background: var(--page); pointer-events: none;
 }
+.pin-ring + .pin-dot { position: relative; }
+.pin-spike {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  border-left: 2.25px solid transparent; border-right: 2.25px solid transparent; border-bottom: 5px solid var(--gold);
+  transform-origin: 0 0;
+}
+.pin-spike:nth-child(1) { transform: rotate(0deg) translate(-2.25px, -22px); }
+.pin-spike:nth-child(2) { transform: rotate(90deg) translate(-2.25px, -22px); }
+.pin-spike:nth-child(3) { transform: rotate(180deg) translate(-2.25px, -22px); }
+.pin-spike:nth-child(4) { transform: rotate(270deg) translate(-2.25px, -22px); }
+.pin-badge {
+  display: none; position: absolute; left: 23px; top: 3px; width: 17px; height: 17px; box-sizing: border-box;
+  align-items: center; justify-content: center; border-radius: 50%;
+  background: var(--gold); color: #0B2217; border: 2px solid var(--page);
+  font-family: var(--font-body); font-size: 0.625rem; font-weight: 800; line-height: 1; pointer-events: none;
+}
+.show-season-badges .pin-badge { display: flex; }
 .pin:focus-visible { outline: none; }
 .pin:focus-visible .pin-dot { outline: 2px solid var(--brass); outline-offset: 5px; }
-.legend {
-  display: flex; gap: 12px; padding: 8px 12px; background: rgba(11, 34, 23, 0.92); border: 1px solid var(--border);
-  border-radius: 8px; font-size: 0.75rem; color: var(--muted); pointer-events: none;
-}
-.legend-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-.legend-gold { background: var(--gold); }
-.legend-silver { background: var(--silver); }
-.legend-bronze { background: var(--bronze); }
-.legend-tbc { background: var(--border); }
-.legend-star { width: auto; height: auto; background: none; color: var(--text); font-size: 0.9rem; line-height: 1; }
-.events-legend {   /* bottom right, above the map credits, clear of the Recos | Dinners toggle */
-  position: fixed; z-index: 998; right: calc(12px + env(safe-area-inset-right)); bottom: calc(30px + env(safe-area-inset-bottom));
-  max-width: calc(100vw - 220px - env(safe-area-inset-left) - env(safe-area-inset-right)); flex-wrap: wrap; justify-content: flex-end; gap: 4px 12px;
-}
 .events-scores {
   position: fixed; z-index: 999; top: calc(72px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left));
   max-width: calc(100vw - 72px); display: flex; gap: 6px; padding: 4px; overflow-x: auto; scrollbar-width: none;
@@ -1006,10 +1009,8 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .dc-score.t-gold { color: var(--gold); }
 .dc-score.t-silver { color: var(--silver); }
 .dc-score.t-bronze { color: var(--bronze); }
-.dc-best { display: block; margin-top: 2px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; }
-.dc-best.t-gold { color: var(--gold); }
-.dc-best.t-silver { color: var(--silver); }
-.dc-best.t-bronze { color: var(--bronze); }
+.dc-winner { display: block; margin-top: 4px; font-family: var(--font-body); font-size: 0.8rem; font-weight: 600; color: var(--gold); line-height: 1.3; }
+.dc-winner-row { margin: 4px 0 0; }
 .dc-score.t-tbc { color: var(--muted); }
 .dc-bars { display: flex; flex-direction: column; gap: 10px; }
 .dc-bar { display: grid; grid-template-columns: 84px 1fr 44px; align-items: center; gap: 12px; font-size: 0.875rem; }

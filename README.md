@@ -35,7 +35,8 @@ database password anywhere in this repo.
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
 | `js/map-tools.js` | "Find me", Directions and Copy address on every map. The same file is copied into the public dinner map repos (`map`, `mapronds`): change it in one place, copy it to the others. |
 | `js/club-switch.js` | The current club, for members of more than one club: a small switch in the top bar of every members page. |
-| `js/dinner-scores.js` | Dinner pins, colour tiers, legend and score buttons, ported from the club dinner maps, for the Events view. |
+| `js/dinner-scores.js` | Dinner pins (with the season-winner ring and badge), colour tiers and score buttons, ported from the club dinner maps, for the Dinners view. |
+| `js/season-winners.js` | The season-winner rule (highest score of each season in one category, ties included), with no dependencies so any map can use it. |
 | `js/dinner.js`, `js/dinners.js` | The "Next dinner" panel on the member home, and the Dinners admin page. |
 | `js/activity.js`, `js/scope.js` | The home page's activity sections, and the "My clubs / All clubs" choice shared by the home page and the Recos map (remembered per member in the browser). |
 | `js/login.js`, `js/members.js`, `js/directory.js`, `js/profile.js`, `js/admin.js`, `js/recos.js` | Page scripts. |
@@ -255,16 +256,25 @@ unchanged.
 - **[ Recos | Dinners ]**: a two-option toggle at the bottom left of the Recos map ("Recos | Dîners" on the
   French site). The active option is highlighted; tapping the other swaps the reco pins for the dinners of the
   member's current club, or back (arrow keys work too). The map keeps its position and zoom; the choice is
-  remembered in the browser. The colour legend leaves room for it, and the add sheet slides over it on phones. One pin per restaurant, coloured by the most recent dinner's score with the dinner
-  maps' scale (gold 7.5+, silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20);
-  grey "Not rated" when it has no score. The **best dinner of each season** for the chosen score (Overall, Food,
-  Wine or Vibe; ties all count) is a **star** instead of a dot, in the same colour, and its card says
-  "★ Best of the season · S4". A restaurant that hosted a season's best shows the star with that dinner's score. Buttons: Overall (as on the dinner maps: food counts double,
-  (2 x food + wine + vibe) / 4, so it needs all three scores), Food, Wine, Vibe. The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected
-  score (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu
-  (private menus open through a link that expires); earlier dinners at the same place are listed below.
-  The colour legend sits at the bottom right. In Dinners the + button and long-press are
-  off, and My clubs / All clubs (Recos only) is hidden.
+  remembered in the browser. The add sheet slides over it on phones.
+- One pin per restaurant, coloured by the most recent dinner's score with the dinner maps' scale (gold 7.5+,
+  silver 6.5–7.5, bronze below, out of 10; the same once scaled for Les Ronds' 20); grey when not rated. No legend.
+  Buttons: Overall (as on the dinner maps: (2 x food + wine + vibe) / 4, so it needs all three scores), Food,
+  Wine, Vibe.
+- **Season winners** (`js/season-winners.js`, worked out in the page from the dinners already loaded, no database
+  change; written so the public dinner maps can reuse it): within each season, the dinner(s) with the highest
+  score in the category selected (Overall exact, 0.5 x plate + 0.25 x bottles + 0.25 x atmosphere; ties all win;
+  no score, no win). A winner's circle keeps its size, colour and number and gets a **gold ring** (2 px gap in
+  the map's dark colour, 1 px gold) with **four small spikes** (top, bottom, left, right), at every zoom, and a
+  **17 px gold badge** with the season number on its top-right edge from **zoom 15** (where the West End pins
+  stop piling up). No extra layering. A restaurant that hosted a winner shows that dinner. Season numbers:
+  "S3" -> 3; "2018/2019" -> years since the club's first season + 1 (Les Ronds: 2016/2017 -> 1).
+- The popup is the dinner maps' card: season · month · number, name, address, brigadiers, the selected score
+  (big, in its tier colour, out of the club's scale), Plate / Bottles / Atmosphere bars and View menu (private
+  menus open through a link that expires); earlier dinners at the same place are listed below. A winning
+  dinner says "Winner of Season 3 · Overall, Food" (every category it won) in gold next to the name ("Vainqueur
+  de la saison 3 · Global, Cuisine" in French). In Dinners the + button and long-press are off, and
+  My clubs / All clubs (Recos only) is hidden.
 - Data comes from `club_dinner_map(club)`, for members of that club only; dinners still to come whose replies
   are not open stay hidden, and so do dinners without a venue.
 - **Current club**: members of more than one club get a switch in the top bar (the club's name). It sets one

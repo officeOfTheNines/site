@@ -758,7 +758,6 @@
   var modeToggle = document.getElementById('mode-toggle');
   var modeOptions = Array.prototype.slice.call(modeToggle.querySelectorAll('.mode-option'));
   var scoresNode = document.getElementById('events-scores');
-  var legendNode = document.getElementById('events-legend');
   var eventsEmpty = document.getElementById('events-empty');
 
   function readMode() {
@@ -794,20 +793,30 @@
     drawDinners();
   }
 
-  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated). A venue that
-  // hosted the best dinner of a season (for the chosen score) shows a star instead, with that dinner's score.
-  var seasonBestIds = {};
+  // One pin per venue, coloured by the newest dinner's selected score (grey when not rated). Season winners
+  // (js/season-winners.js) for the category selected: the pin shows the winning dinner, with a gold ring,
+  // four spikes and a badge with the season number; the badge only from BADGE_ZOOM, where the West End
+  // pins stop piling up. Winners get no extra layering.
+  var BADGE_ZOOM = 15;
+  var winnersByMode = {}, seasonNumber = {};
+  function showBadgesForZoom() {
+    map.getContainer().classList.toggle('show-season-badges', map.getZoom() >= BADGE_ZOOM);
+  }
   function drawDinners() {
     Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
     dinnerMarkers = {};
-    seasonBestIds = S.seasonBest([].concat.apply([], dinnerVenues.map(function (v) { return v.dinners; })), scoreMode);
+    var all = [].concat.apply([], dinnerVenues.map(function (v) { return v.dinners; }));
+    winnersByMode = S.seasonWinners(all);
+    seasonNumber = S.seasonNumbers(all);
+    var wins = winnersByMode[scoreMode] || {};
     dinnerVenues.forEach(function (v) {
-      var best = v.dinners.filter(function (d) { return seasonBestIds[d.event_id]; })
-        .sort(function (a, b) { return S.scoreOf(b, scoreMode) - S.scoreOf(a, scoreMode); })[0];
-      var shown = best || v.dinners[0];
+      var won = v.dinners.filter(function (d) { return wins[d.event_id]; })
+        .sort(function (a, b) { return (seasonNumber[b.event_id] || 0) - (seasonNumber[a.event_id] || 0); })[0];
+      var shown = won || v.dinners[0];
       var score = S.scoreOf(shown, scoreMode);
-      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale)) + (best ? ', best of ' + S.yearOf(best) : '');
-      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale, !!best), title: label, alt: label, keyboard: true });
+      var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale)) +
+        (won ? ', winner of season ' + seasonNumber[won.event_id] : '');
+      var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale, won ? seasonNumber[won.event_id] : null), title: label, alt: label, keyboard: true });
       marker.bindPopup(function () { return venuePopup(v); }, {
         className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
         maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
@@ -815,7 +824,6 @@
       });
       dinnerMarkers[v.id] = marker;
     });
-    S.legend(legendNode, dinnerVenues.length ? dinnerVenues[0].scale : 10);
     applyEventsFilter();
   }
 
@@ -908,8 +916,21 @@
     var go = null;
     var card = el('section', { className: 'dinner-card' + (first ? '' : ' dinner-card-earlier') });
     card.appendChild(el('p', { className: 'dc-eyebrow', 'data-no-i18n': true, text: eyebrowOf(d) }));
+    // "Winner of Season 3 · Overall, Food": every category this dinner won, next to the venue name
+    // (earlier dinners: under their season line)
+    var wonIn = S.MODES.filter(function (m) { return (winnersByMode[m.key] || {})[d.event_id]; });
+    var winLine = wonIn.length && seasonNumber[d.event_id] ? el('span', { className: 'dc-winner' }, [
+      el('span', { text: 'Winner of Season' }), document.createTextNode(' '),
+      el('span', { 'data-no-i18n': true, text: String(seasonNumber[d.event_id]) }), document.createTextNode(' · ')
+    ].concat([].concat.apply([], wonIn.map(function (m, i) {
+      return (i ? [document.createTextNode(', ')] : []).concat([el('span', { text: m.label })]);   // each label translated on its own
+    })))) : null;
     if (first) {
-      card.appendChild(el('h3', { className: 'dc-name', 'data-no-i18n': true, text: v.name }));
+      card.appendChild(el('h3', { className: 'dc-name' }, [el('span', { 'data-no-i18n': true, text: v.name }), winLine]));
+    } else if (winLine) {
+      card.appendChild(el('p', { className: 'dc-winner-row' }, [winLine]));
+    }
+    if (first) {
       var addressNode = v.address ? el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }) : null;
       if (addressNode) card.appendChild(addressNode);
       go = window.NinesMapTools ? window.NinesMapTools.actions({ name: v.name, address: v.address, lat: v.lat, lng: v.lng }, N.lang,
@@ -928,11 +949,7 @@
         el('span', { className: 'dc-score-wrap' }, [
           el('span', { className: 'dc-score t-' + S.tier(score, v.scale), 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
           el('span', { className: 'dc-scale', 'data-no-i18n': true, text: '/' + v.scale })
-        ]),
-        seasonBestIds[d.event_id] ? el('span', { className: 'dc-best t-' + S.tier(score, v.scale) }, [
-          el('span', { 'aria-hidden': 'true', text: '★ ' }), el('span', { text: 'Best of the season' }),
-          document.createTextNode(' · '), el('span', { 'data-no-i18n': true, text: S.yearOf(d) })
-        ]) : null
+        ])
       ]));
       card.appendChild(el('div', { className: 'dc-bars' }, [
         scoreBar('Plate', d.rating_food, v.scale),
@@ -990,7 +1007,6 @@
     addOpen.hidden = ev || !canAdd;
     document.getElementById('recos-scope').hidden = ev;   // My clubs / All clubs: Recos only
     scoresNode.hidden = !ev;
-    legendNode.hidden = !ev;
     searchInput.placeholder = ev ? 'Search dinners' : 'Search recos';
     map.closePopup();
     closeResults();
@@ -1062,6 +1078,8 @@
     }
     N.showState('ready');
     map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
+    showBadgesForZoom();
     L.control.zoom({ position: 'topright' }).addTo(map);
     // "find me": asks for the position only when tapped; never stored or sent (js/map-tools.js)
     if (window.NinesMapTools) window.NinesMapTools.addLocate(map, { lang: N.lang, position: 'topright' });
@@ -1078,7 +1096,7 @@
       if (startMode === 'events') setMode('events', true);
       else saveMode('recos');
     });
-    // the current club (members of several clubs): its dinners, legend and scale, in place
+    // the current club (members of several clubs): its dinners and scale, in place
     if (window.NinesClubSwitch) {
       window.NinesClubSwitch.onChange(async function () {
         if (mode !== 'events') { dinnerClubId = null; return; }
