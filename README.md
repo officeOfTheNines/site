@@ -194,10 +194,15 @@ unchanged.
   ignores case and accents, and only ever sees the recos the member is allowed to see. Words starting
   with `#` are reserved for tags, once recos have them.
 - **Long-press the map** (about half a second; right-click or a long mouse press on a computer) to add a
-  reco at that spot. The page suggests the nearest restaurant from OpenStreetMap, or leaves the name
+  reco at that spot, on desktop and tablet only. On phones (700 px wide or less) recos are added with the **+**
+  button only, so a double-tap or a held tap only ever zooms. The page suggests the nearest restaurant from OpenStreetMap, or leaves the name
   empty to type. A press next to an existing reco (within about 40 m) offers to add to it instead. Moving
   the finger or a second finger (pinch) cancels the press, so dragging and zooming still work.
-- A **tip** about long-press shows on the first visit until it is dismissed (remembered in the browser).
+- A **tip** about long-press (on phones: about the + button) shows on the first visit until it is dismissed
+  (remembered in the browser).
+- **Zoom on phones**: no + / − buttons (same 700 px breakpoint); pinch and double-tap zoom, both switched on
+  explicitly. "Find me" stays in the right-hand column, moved up into the freed space. Desktop and tablet keep
+  the + / − buttons.
 
 #### Recent activity and the My clubs / All clubs toggle (step 9)
 

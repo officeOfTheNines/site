@@ -1144,3 +1144,9 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
   .card-sheet .sheet-grab:focus-visible, .card-sheet .sheet-close:focus-visible { outline: 3px solid var(--brass); outline-offset: -3px; }
   .card-sheet .dc-name { font-size: 1.75rem; margin: 6px 0; }
 }
+
+/* Phones (same breakpoint as the card sheet): no + / − buttons, zoom by pinch and double-tap. The "find me"
+   button stays in the right-hand column and moves up into the freed space, clear of the bars on the left. */
+@media (max-width: 700px) {
+  .recos-page .leaflet-control-zoom { display: none; }
+}

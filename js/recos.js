@@ -22,7 +22,10 @@
   // Where the back arrow goes: this club's member home (club news and recent activity).
   // Change it here if the home page moves.
   var BACK_URL = 'index.html';
-  var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there
+  var LONG_PRESS_MS = 500;   // hold this long on the map to add a reco there (not on phones: + only)
+  // Phones: the same breakpoint as the card sheet (700px). No + / − buttons (pinch and double-tap zoom) and
+  // no adding by long-press, so a double-tap or a held tap only ever zooms.
+  function isPhone() { return window.matchMedia('(max-width: 700px)').matches; }
   var PRESS_SLOP_PX = 8;     // moving further than this cancels the press (it is a drag)
   var NEARBY_M = 40;         // a long-press this close to a pin offers to add to that restaurant
   var TIP_KEY = 'nines.recos.longPressTipDismissed';
@@ -621,7 +624,7 @@
       if (press && e.pointerId !== press.id) { cancel(); return; } // a second finger: a pinch
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       if (e.target.closest('.leaflet-marker-icon, .leaflet-popup, .leaflet-control')) return;
-      if (mode === 'events') return;
+      if (mode === 'events' || isPhone()) return;   // phones add with the + button only
       cancel();
       var x = e.clientX, y = e.clientY;
       press = { id: e.pointerId, x: x, y: y, timer: setTimeout(function () {
@@ -641,7 +644,7 @@
     });
     map.on('movestart zoomstart', cancel);
     // right-click on a computer; some phones also send this after a long-press (ignored as a repeat)
-    map.on('contextmenu', function (e) { cancel(); addAt(e.latlng); });
+    map.on('contextmenu', function (e) { cancel(); if (!isPhone()) addAt(e.latlng); });
   }
 
   // ---- First-visit tip ----
@@ -657,9 +660,9 @@
   function showTip() {
     if (!canAdd || tipDismissed()) return;
     var desktop = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
-    document.getElementById('recos-tip-text').textContent = desktop
-      ? 'Tip: right-click (or long-press) the map to add a reco.'
-      : 'Tip: long-press the map to add a reco.';
+    document.getElementById('recos-tip-text').textContent = isPhone()
+      ? 'Tip: press + to add a reco.'
+      : desktop ? 'Tip: right-click (or long-press) the map to add a reco.' : 'Tip: long-press the map to add a reco.';
     tipNode.hidden = false;
   }
 
@@ -1102,7 +1105,8 @@
       });
     }
     N.showState('ready');
-    map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    // pinch and double-tap zoom on (the only zoom on phones, where the + / − buttons are hidden by CSS)
+    map = L.map('recos-map', { zoomControl: false, touchZoom: true, doubleClickZoom: true }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
     cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map) : null;   // phone cards
     map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
     showBadgesForZoom();

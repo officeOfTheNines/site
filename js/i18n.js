@@ -361,6 +361,7 @@
     'Our last dinner at': 'Notre dernier dîner chez',
     'Dinners': 'Dîners',
     'Map view': 'Vue de la carte',
+    'Tip: press + to add a reco.': 'Astuce : appuyez sur + pour ajouter une reco.',
     'Selected restaurant': 'Restaurant sélectionné',
     'Show less': 'Afficher moins',
     'Show more details': 'Afficher plus de détails',
