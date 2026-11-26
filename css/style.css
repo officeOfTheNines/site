@@ -1049,14 +1049,8 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 }
 .popup-place-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 8px 0 2px; }
 .popup-place-actions .popup-directions { min-height: var(--touch); padding: 6px 16px; font-size: 0.9rem; }
-.popup-place-actions .popup-copy { min-height: var(--touch); font-size: 0.9rem; }
 .dc-actions { display: flex; gap: 8px; margin-top: 18px; }
 .dc-actions .dc-menu { flex: 1 1 0; margin-top: 0; text-decoration: none; }
-.dc-copy {
-  display: inline-flex; align-items: center; min-height: 36px; padding: 0; margin-top: 2px; border: 0; background: none;
-  color: var(--brass); font: inherit; font-size: 0.8125rem; text-decoration: underline; cursor: pointer;
-}
-.dc-copy:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -1094,3 +1088,59 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .section-toggle:not([open]) > summary::after { transform: rotate(-45deg); margin-bottom: 0; }
 .section-toggle[open] > summary { margin-bottom: 12px; }
 .section-toggle > summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 4px; border-radius: 4px; }
+
+/* ---------- Phone card sheet (js/card-sheet.js), copied from the public dinner map ----------
+   Hidden until a pin is tapped, then peeks up to the card's .peek-end; slide up to open. Phones only. */
+.card-sheet { display: none; }
+@media (max-width: 700px) {
+  .card-sheet {
+    display: block;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    height: calc(100% - 16px);
+    z-index: 1100;
+    padding: 0 16px calc(28px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.28s;
+    overscroll-behavior: contain;
+  }
+  .card-sheet.sheet-peek {
+    transform: translateY(calc(100% - var(--peek, 220px)));
+    visibility: visible;
+    transition-delay: 0s;
+    touch-action: none;
+  }
+  .card-sheet.sheet-open {
+    transform: translateY(0);
+    visibility: visible;
+    transition-delay: 0s;
+    overflow-y: auto;
+  }
+  .card-sheet.dragging { transition: none; }
+  .card-sheet .sheet-bar {
+    display: flex; align-items: center;
+    position: sticky; top: 0; z-index: 1;
+    margin: 0 -16px 4px; padding: 0 4px 0 60px;
+    background: var(--panel);
+    touch-action: none;
+  }
+  .card-sheet .sheet-grab {
+    flex: 1; min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 0; border-radius: 8px; cursor: grab;
+  }
+  .card-sheet .sheet-grab span { width: 40px; height: 5px; border-radius: 999px; background: var(--border); }
+  .card-sheet .sheet-close {
+    width: 44px; height: 44px; flex-shrink: 0; margin-left: 12px;
+    background: none; border: 0; border-radius: 50%;
+    color: var(--muted); font-size: 1.1rem; cursor: pointer;
+  }
+  .card-sheet .sheet-close:hover { color: var(--text); }
+  .card-sheet .sheet-grab:focus-visible, .card-sheet .sheet-close:focus-visible { outline: 3px solid var(--brass); outline-offset: -3px; }
+  .card-sheet .dc-name { font-size: 1.75rem; margin: 6px 0; }
+}

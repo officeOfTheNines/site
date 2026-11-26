@@ -33,7 +33,8 @@ database password anywhere in this repo.
 | `js/nav.js` | The shared top bar on every members page (Home, Directory, Recos, Map, Admin, Sign out). |
 | `js/people.js` | Member cards, signed photo links and photo resizing, shared by the directory, profile and admin pages. |
 | `js/places-search.js` | Finding a restaurant for Recos: `searchPlaces(query)` (OpenStreetMap search through Photon), `nearestPlace(lat, lng)` (what is at a point of the map, for long-press) and reading pasted Google Maps links. The only file to change to switch search provider. |
-| `js/map-tools.js` | "Find me", Directions and Copy address on every map. The same file is copied into the public dinner map repos (`map`, `mapronds`): change it in one place, copy it to the others. |
+| `js/card-sheet.js` | The phone bottom sheet for the member map's cards, copied from the public dinner map (same breakpoint, states, animation and gestures). |
+| `js/map-tools.js` | "Find me", Directions and Copy address on every map (Copy address used by the public maps only). The same file is copied into the public dinner map repos (`map`, `mapronds`): change it in one place, copy it to the others. |
 | `js/club-switch.js` | The current club, for members of more than one club: a small switch in the top bar of every members page. |
 | `js/dinner-scores.js` | Dinner pins (with the season-winner ring and badge), colour tiers and score buttons, ported from the club dinner maps, for the Dinners view. |
 | `js/season-winners.js` | The season-winner rule (highest score of each season in one category, ties included), with no dependencies so any map can use it. |
@@ -292,8 +293,16 @@ unchanged.
 - **Directions**: in every restaurant popup or card, a link to Google Maps directions by public transport from
   wherever the person is: `https://www.google.com/maps/dir/?api=1&destination=<name, address, postcode>&travelmode=transit`
   (the coordinates when the name or address is missing). It opens in a new tab. No API key, no Google Places.
-- **Copy address** copies "name, address, postcode", with a brief "Copied"; without the clipboard it selects the
-  address so it can be copied by hand.
+- **Copy address** is on the public dinner maps only (it copies "name, address, postcode"); the member map's
+  Reco and Dinner cards show the address and Directions, without it.
+
+#### Cards on phones: bottom sheet (member map)
+
+- Up to 700 px wide, a Reco or Dinner card opens as a **bottom sheet** instead of a popup, copied from the public
+  dinner map (`js/card-sheet.js`): it peeks up to the score (Dinner) or to Directions (Reco); drag it up, tap
+  the handle or tap the card to open it fully; drag down to go back to the peek or close; the X, Escape or a
+  tap on the empty map closes it. The map nudges so the chosen pin stays visible above the peek. Wider screens
+  keep the Leaflet popup.
 
 #### Claude's read access to replies (optional)
 

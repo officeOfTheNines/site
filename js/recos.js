@@ -156,17 +156,43 @@
     return li;
   }
 
+  // Cards: a Leaflet popup on desktop and tablet; on phones (up to 700px) the same card in a bottom sheet
+  // that slides up, as on the public dinner map (js/card-sheet.js).
+  var cardSheet = null;
+  function bindCard(marker, contentFn, popupOptions) {
+    marker.bindPopup(contentFn, popupOptions);
+    marker.off('click', marker._openPopup, marker);   // our own click handler picks popup or sheet
+    marker.on('click', function () { showCard(marker); });
+    marker.cardContent = contentFn;
+  }
+  function showCard(marker) {
+    if (cardSheet && window.NinesCardSheet.isPhone()) {
+      map.closePopup();
+      cardSheet.show(marker.cardContent(), marker.getLatLng());
+    } else {
+      if (cardSheet) cardSheet.close();
+      marker.openPopup();
+    }
+  }
+  function closeCards() {
+    map.closePopup();
+    if (cardSheet) cardSheet.close();
+  }
+
   function popupContent(place) {
     var box = el('div', { className: 'reco-popup' }, [
       el('h3', { className: 'reco-place-name', 'data-no-i18n': true, text: place.name })
     ]);
     var addressNode = place.address ? el('p', { className: 'muted small', 'data-no-i18n': true, text: place.address }) : null;
     if (addressNode) box.appendChild(addressNode);
-    // Directions (Google Maps, by transport, from where the member is) and Copy address (js/map-tools.js)
+    // Directions (Google Maps, by transport, from where the member is; js/map-tools.js). The phone sheet
+    // peeks down to here (.peek-end).
     if (window.NinesMapTools) {
       var go = window.NinesMapTools.actions({ name: place.name, address: place.address, lat: place.lat, lng: place.lng }, N.lang,
-        { linkClass: 'button popup-directions', copyClass: 'button link popup-copy', selectNode: addressNode });
-      box.appendChild(el('div', { className: 'popup-place-actions' }, [go.directions, go.copy]));
+        { linkClass: 'button popup-directions' });
+      box.appendChild(el('div', { className: 'popup-place-actions peek-end' }, [go.directions]));
+    } else if (addressNode) {
+      addressNode.classList.add('peek-end');
     }
     var list = el('ul', { className: 'reco-lines' });
     place.comments.forEach(function (c) { list.appendChild(commentLine(c, true)); });
@@ -228,7 +254,7 @@
     places.forEach(function (place) {
       var marker = L.marker([place.lat, place.lng], { icon: pinIcon(), title: place.name, alt: place.name, keyboard: true });
       // keep the open card clear of the top bar
-      marker.bindPopup(function () { return popupContent(place); }, { maxWidth: 320, autoPanPaddingTopLeft: [16, 88], autoPanPaddingBottomRight: [16, 40] });
+      bindCard(marker, function () { return popupContent(place); }, { maxWidth: 320, autoPanPaddingTopLeft: [16, 88], autoPanPaddingBottomRight: [16, 40] });
       markers[place.id] = marker;
     });
     applyFilter();
@@ -370,7 +396,7 @@
     }
     // jump (no animation) so the card can then pan itself clear of the top bar
     map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
-    marker.openPopup();
+    showCard(marker);
   }
 
   async function refresh(openId) {
@@ -388,7 +414,7 @@
     editBody.value = c.body;
     editVisibility.value = c.visibility;
     editError.textContent = '';
-    map.closePopup();
+    closeCards();
     if (!(await confirmDialog(editDialog))) return;
     var body = editBody.value.trim();
     if (!body || body.length > 300) { showError('Please write a reco of 1 to 300 characters.'); return; }
@@ -403,7 +429,7 @@
   }
 
   async function deleteComment(c) {
-    map.closePopup();
+    closeCards();
     if (!(await confirmDialog(deleteDialog))) return;
     var result = await client.from('reco_comments').delete().eq('id', c.comment_id).select('id');
     if (result.error || !result.data || result.data.length !== 1) {
@@ -446,7 +472,7 @@
 
   // The add flow opens from the + button or from a long-press on the map.
   function openAdd() {
-    map.closePopup();
+    closeCards();
     closeResults();
     addPanel.hidden = false;
     resetAdd();
@@ -817,7 +843,7 @@
       var label = v.name + ', ' + (score === null ? 'Not rated' : S.withScale(score, v.scale)) +
         (won ? ', winner of season ' + seasonNumber[won.event_id] : '');
       var marker = L.marker([v.lat, v.lng], { icon: S.icon(score, v.scale, won ? seasonNumber[won.event_id] : null), title: label, alt: label, keyboard: true });
-      marker.bindPopup(function () { return venuePopup(v); }, {
+      bindCard(marker, function () { return venuePopup(v); }, {
         className: 'dinner-leaflet-popup', minWidth: 260, maxWidth: 340,
         maxHeight: Math.max(260, Math.round(window.innerHeight * 0.62)),
         autoPanPaddingTopLeft: [16, 140], autoPanPaddingBottomRight: [16, 96]
@@ -855,7 +881,7 @@
     if (!marker) return;
     if (!map.hasLayer(marker)) { searchInput.value = ''; applyEventsFilter(); }
     map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
-    marker.openPopup();
+    showCard(marker);
   }
 
   function fitDinners() {
@@ -934,8 +960,7 @@
       var addressNode = v.address ? el('p', { className: 'dc-address', 'data-no-i18n': true, text: v.address }) : null;
       if (addressNode) card.appendChild(addressNode);
       go = window.NinesMapTools ? window.NinesMapTools.actions({ name: v.name, address: v.address, lat: v.lat, lng: v.lng }, N.lang,
-        { linkClass: 'dc-menu dc-directions', copyClass: 'dc-copy', selectNode: addressNode }) : null;
-      if (go) card.appendChild(go.copy);
+        { linkClass: 'dc-menu dc-directions' }) : null;
     }
     if (d.brigadiers && d.brigadiers.length) {
       card.appendChild(el('p', { className: 'dc-brigadiers', 'data-no-i18n': true, text: joinNames(d.brigadiers.map(shortName)) }));
@@ -944,7 +969,7 @@
     if (rated) {
       var score = S.scoreOf(d, scoreMode);
       var label = (S.MODES.find(function (m) { return m.key === scoreMode; }) || S.MODES[0]).label;
-      card.appendChild(el('div', { className: 'dc-score-block' }, [
+      card.appendChild(el('div', { className: 'dc-score-block' + (first ? ' peek-end' : '') }, [
         el('span', { className: 'dc-eyebrow', text: label + ' score' }),
         el('span', { className: 'dc-score-wrap' }, [
           el('span', { className: 'dc-score t-' + S.tier(score, v.scale), 'data-no-i18n': true, text: score === null ? '—' : score.toFixed(2) }),
@@ -957,7 +982,7 @@
         scoreBar('Atmosphere', d.rating_vibe, v.scale)
       ]));
     } else {
-      card.appendChild(el('p', { className: 'dc-tbc', text: 'Ratings coming soon' }));
+      card.appendChild(el('p', { className: 'dc-tbc' + (first ? ' peek-end' : ''), text: 'Ratings coming soon' }));
     }
     // the newest dinner's card: Directions (gold) next to View menu
     var buttons = first && go ? el('div', { className: 'dc-actions' }, [go.directions]) : null;
@@ -987,7 +1012,7 @@
       b.addEventListener('click', function () {
         scoreMode = m.key;
         scoresNode.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-checked', String(x === b)); });
-        map.closePopup();
+        closeCards();
         drawDinners();
       });
       scoresNode.appendChild(b);
@@ -1008,7 +1033,7 @@
     document.getElementById('recos-scope').hidden = ev;   // My clubs / All clubs: Recos only
     scoresNode.hidden = !ev;
     searchInput.placeholder = ev ? 'Search dinners' : 'Search recos';
-    map.closePopup();
+    closeCards();
     closeResults();
     if (ev) {
       tipNode.hidden = true;
@@ -1070,7 +1095,7 @@
         } catch (error) {
           showError('Could not load the recos. ' + N.friendlyError(error));
         }
-        map.closePopup();
+        closeCards();
         applyFilter();
         if (searchInput.value.trim()) showResults();
         fitShown();
@@ -1078,6 +1103,7 @@
     }
     N.showState('ready');
     map = L.map('recos-map', { zoomControl: false }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map) : null;   // phone cards
     map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
     showBadgesForZoom();
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -1100,7 +1126,7 @@
     if (window.NinesClubSwitch) {
       window.NinesClubSwitch.onChange(async function () {
         if (mode !== 'events') { dinnerClubId = null; return; }
-        map.closePopup();
+        closeCards();
         try { await loadDinners(); fitDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); }
       });
     }
