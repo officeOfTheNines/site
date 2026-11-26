@@ -887,6 +887,19 @@
     showCard(marker);
   }
 
+  // Centre and zoom on the pin of one dinner (by its club_event id) and open its card; false if the dinner
+  // is not on this map (not the member's club, hidden, or no venue).
+  var LINK_ZOOM = 17;   // close enough that neighbouring pins (e.g. on Charlotte Street) no longer touch
+  function openDinner(eventId) {
+    var v = dinnerVenues.find(function (x) { return x.dinners.some(function (d) { return d.event_id === eventId; }); });
+    var marker = v && dinnerMarkers[v.id];
+    if (!marker) return false;
+    if (!map.hasLayer(marker)) { searchInput.value = ''; applyEventsFilter(); }
+    map.setView(marker.getLatLng(), Math.max(map.getZoom(), LINK_ZOOM), { animate: false });
+    showCard(marker);
+    return true;
+  }
+
   function fitDinners() {
     if (dinnerVenues.length) {
       map.fitBounds(L.latLngBounds(dinnerVenues.map(function (v) { return [v.lat, v.lng]; })), { padding: [48, 48], maxZoom: 15 });
@@ -1118,13 +1131,23 @@
     updateVisibilityText();
     updateCount();
     buildScoreButtons();
-    // opened from the home feed: recos.html?venue=<id> centres that reco with its card open
-    var linked = new URLSearchParams(window.location.search).get('venue');
-    var startMode = linked ? 'recos' : readMode();
+    // Links into the map (ids only, never names or personal data):
+    //   recos.html?venue=<id>                                (home feed) that reco, centred, card open
+    //   recos.html?view=dinners&dinner=<club_event id>&club=<club id>   (home dinner panel) the Dinners view
+    //       of that club, centred and zoomed on that dinner's pin with its card open; if the dinner is not
+    //       on the member's map, the Dinners view opens as usual, without an error.
+    var params = new URLSearchParams(window.location.search);
+    var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    var linked = params.get('venue');
+    var linkedDinner = params.get('view') === 'dinners' && UUID.test(params.get('dinner') || '') ? params.get('dinner') : null;
+    var linkedClub = /^[0-9]+$/.test(params.get('club') || '') ? Number(params.get('club')) : null;
+    if (params.get('view') === 'dinners' && linkedClub && window.NinesClubSwitch) window.NinesClubSwitch.set(linkedClub);
+    var startMode = params.get('view') === 'dinners' ? 'events' : linked ? 'recos' : readMode();
     if (startMode === 'recos') showTip();
-    refresh(/^[0-9a-f-]{36}$/i.test(linked || '') ? linked : null).then(function () {
-      if (startMode === 'events') setMode('events', true);
-      else saveMode('recos');
+    refresh(UUID.test(linked || '') ? linked : null).then(async function () {
+      if (startMode !== 'events') { saveMode('recos'); return; }
+      await setMode('events', !linkedDinner);
+      if (linkedDinner && !openDinner(linkedDinner)) fitDinners();
     });
     // the current club (members of several clubs): its dinners and scale, in place
     if (window.NinesClubSwitch) {

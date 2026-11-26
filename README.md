@@ -301,6 +301,15 @@ unchanged.
 - **Copy address** is on the public dinner maps only (it copies "name, address, postcode"); the member map's
   Reco and Dinner cards show the address and Directions, without it.
 
+#### Links into the member map
+
+- `recos.html?venue=<venue id>` (home activity feed): that reco, centred, with its card open.
+- `recos.html?view=dinners&dinner=<club_event id>&club=<club id>` (home dinner panel: the venue in "Our last
+  dinner at …" and in the next-dinner tile): the Dinners view of that club (a member of several clubs is
+  switched to it), centred and zoomed (zoom 17) on that dinner's pin, with its card open (bottom sheet on phones,
+  popup on wider screens). Ids only, never names or personal data. If the dinner is not on the member's map, the
+  Dinners view opens as usual, without an error. The map's back button and the browser's back return home.
+
 #### Cards on phones: bottom sheet (member map)
 
 - Up to 700 px wide, a Reco or Dinner card opens as a **bottom sheet** instead of a popup, copied from the public

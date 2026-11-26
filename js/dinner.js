@@ -59,6 +59,13 @@
     }));
   }
 
+  // The venue as a link to the member map's Dinners view, centred on this dinner with its card open.
+  // The link carries the dinner's id and its club only (recos.html reads ?view=dinners&dinner=&club=).
+  function venueLink(club, row) {
+    return el('a', { className: 'dinner-venue-link', 'data-no-i18n': true, text: row.venue_name,
+      href: 'recos.html?view=dinners&dinner=' + encodeURIComponent(row.event_id) + '&club=' + encodeURIComponent(club.club_id) });
+  }
+
   async function renderPanel(club, row, showClub) {
     var section = el('section', { className: 'panel dinner-panel', 'aria-label': 'Next dinner' });
     if (showClub) section.appendChild(el('p', { className: 'dinner-club muted', 'data-no-i18n': true, text: club.name }));
@@ -67,14 +74,14 @@
       section.appendChild(el('p', { className: 'dinner-last' }, [
         el('span', { text: 'Our last dinner at' }),
         document.createTextNode(' '),
-        el('strong', { 'data-no-i18n': true, text: row.venue_name })
+        el('strong', null, [row.event_id ? venueLink(club, row) : el('span', { 'data-no-i18n': true, text: row.venue_name })])
       ]));
       return section;
     }
 
     section.appendChild(el('h2', { className: 'dinner-heading', text: 'Next dinner' }));
     section.appendChild(el('p', { className: 'dinner-date', 'data-no-i18n': true, text: dayText(row.event_date) }));
-    if (row.venue_name) section.appendChild(el('p', { className: 'dinner-venue', 'data-no-i18n': true, text: row.venue_name }));
+    if (row.venue_name) section.appendChild(el('p', { className: 'dinner-venue' }, [row.event_id ? venueLink(club, row) : el('span', { 'data-no-i18n': true, text: row.venue_name })]));
     else section.appendChild(el('p', { className: 'dinner-venue muted', text: 'Venue to be announced' }));
 
     if (row.brigadiers && row.brigadiers.length) {
