@@ -161,8 +161,8 @@
 
   // Cards: a Leaflet popup on desktop and tablet; on phones (up to 700px) the same card in a bottom sheet
   // that slides up, as on the public dinner map (js/card-sheet.js).
-  // Selected marker: the pin whose card is open gets a pulsing coral halo, grows by 6px, is raised above the
-  // others, and every other pin fades to 45%. Cleared completely when its card closes (tap on the empty map,
+  // Selected marker: the pin whose card is open gets a subtle, slowly pulsing white halo and is raised above
+  // the others (same size), and every other pin fades to 45%. Cleared completely when its card closes (tap on the empty map,
   // X, swipe down, Escape), when another pin is chosen, and on any change of view, club, score or redraw;
   // clearing also removes a link's dinner / venue id from the address bar so a refresh does not reselect it.
   var cardSheet = null;

@@ -313,13 +313,13 @@ unchanged.
 #### Selected marker (member map)
 
 - Whenever a card is open (a tapped pin, a search result, or a link), its pin is **selected**:
-  - a coral (#e8664f) halo pulses behind it: a 6 px ring at 28% and a 24 px glow, 55%–100% every 1.6 s;
-  - its circle grows by 6 px and it is raised above every other pin;
+  - a subtle white halo pulses slowly behind it: a soft 4 px ring and a 14 px glow, 55%–100% every 3.2 s;
+  - it is raised above every other pin, at its normal size;
   - every other pin fades to 45% (0.3 s).
 
   On a season winner, the halo sits behind the gold ring and spikes, so both show. With reduced motion there's
   no pulse, and the halo is static at full strength.
-- **Clearing** removes all of it (halo, size, layering, fading):
+- **Clearing** removes all of it (halo, layering, fading):
   - a tap on the empty map;
   - closing the card (X, swipe down, Escape);
   - another pin, which moves the selection to it;
