@@ -161,25 +161,65 @@
 
   // Cards: a Leaflet popup on desktop and tablet; on phones (up to 700px) the same card in a bottom sheet
   // that slides up, as on the public dinner map (js/card-sheet.js).
+  // Selected marker: the pin whose card is open gets a pulsing coral halo, grows by 6px, is raised above the
+  // others, and every other pin fades to 45%. Cleared completely when its card closes (tap on the empty map,
+  // X, swipe down, Escape), when another pin is chosen, and on any change of view, club, score or redraw;
+  // clearing also removes a link's dinner / venue id from the address bar so a refresh does not reselect it.
   var cardSheet = null;
+  var selected = null;
+  var FOCUS_ZOOM = 16;
   function bindCard(marker, contentFn, popupOptions) {
     marker.bindPopup(contentFn, popupOptions);
     marker.off('click', marker._openPopup, marker);   // our own click handler picks popup or sheet
     marker.on('click', function () { showCard(marker); });
     marker.cardContent = contentFn;
   }
-  function showCard(marker) {
+  function select(marker) {
+    if (selected === marker) return;
+    clearSelection();
+    selected = marker;
+    var node = marker.getElement();
+    if (node) node.classList.add('is-selected');
+    marker.setZIndexOffset(10000);
+    map.getContainer().classList.add('has-selection');
+  }
+  function clearSelection() {
+    if (map) map.getContainer().classList.remove('has-selection');
+    if (!selected) return;
+    var node = selected.getElement();
+    if (node) node.classList.remove('is-selected');
+    selected.setZIndexOffset(0);
+    selected = null;
+    var url = new URL(window.location.href);
+    ['view', 'dinner', 'club', 'venue'].forEach(function (k) { url.searchParams.delete(k); });
+    if (url.href !== window.location.href) window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+  }
+  function showCard(marker, sheetOptions) {
     if (cardSheet && window.NinesCardSheet.isPhone()) {
       map.closePopup();
-      cardSheet.show(marker.cardContent(), marker.getLatLng());
+      cardSheet.show(marker.cardContent(), marker.getLatLng(), sheetOptions);
     } else {
       if (cardSheet) cardSheet.close();
       marker.openPopup();
     }
+    select(marker);
   }
   function closeCards() {
     map.closePopup();
     if (cardSheet) cardSheet.close();
+    clearSelection();
+  }
+  // Opened by a link: open the card, then fly so the pin sits in the middle of the visible map (on phones,
+  // above the sheet: the centre moves up by half the sheet's height), at street level.
+  function focusMarker(marker) {
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var phone = cardSheet && window.NinesCardSheet.isPhone();
+    if (phone) showCard(marker, { nudge: false });
+    var z = FOCUS_ZOOM;
+    var covered = phone ? cardSheet.peekHeight() : 0;
+    var target = map.unproject(map.project(marker.getLatLng(), z).add([0, covered / 2]), z);
+    if (!phone) map.once('moveend', function () { showCard(marker); });
+    map.flyTo(target, z, { animate: !reduce, duration: 0.6 });
   }
 
   function popupContent(place) {
@@ -252,6 +292,7 @@
   }
 
   function draw() {
+    clearSelection();
     Object.keys(markers).forEach(function (id) { markers[id].remove(); });
     markers = {};
     places.forEach(function (place) {
@@ -387,7 +428,7 @@
   });
   searchClear.addEventListener('click', clearSearch);
 
-  function openPlace(id) {
+  function openPlace(id, fromLink) {
     if (mode === 'events') { openVenue(id); return; }
     var marker = markers[id];
     if (!marker) return;
@@ -397,15 +438,16 @@
       if (place && !inScope(place)) forcedId = id; // outside "My clubs": show it anyway
       applyFilter();
     }
+    if (fromLink) { focusMarker(marker); return; }
     // jump (no animation) so the card can then pan itself clear of the top bar
     map.setView(marker.getLatLng(), Math.max(map.getZoom(), 16), { animate: false });
     showCard(marker);
   }
 
-  async function refresh(openId) {
+  async function refresh(openId, fromLink) {
     try {
       await load();
-      if (openId) openPlace(openId);
+      if (openId) openPlace(openId, fromLink);
     } catch (error) {
       showError('Could not load the recos. ' + N.friendlyError(error));
     }
@@ -832,6 +874,7 @@
     map.getContainer().classList.toggle('show-season-badges', map.getZoom() >= BADGE_ZOOM);
   }
   function drawDinners() {
+    clearSelection();
     Object.keys(dinnerMarkers).forEach(function (id) { dinnerMarkers[id].remove(); });
     dinnerMarkers = {};
     var all = [].concat.apply([], dinnerVenues.map(function (v) { return v.dinners; }));
@@ -889,14 +932,12 @@
 
   // Centre and zoom on the pin of one dinner (by its club_event id) and open its card; false if the dinner
   // is not on this map (not the member's club, hidden, or no venue).
-  var LINK_ZOOM = 17;   // close enough that neighbouring pins (e.g. on Charlotte Street) no longer touch
   function openDinner(eventId) {
     var v = dinnerVenues.find(function (x) { return x.dinners.some(function (d) { return d.event_id === eventId; }); });
     var marker = v && dinnerMarkers[v.id];
     if (!marker) return false;
     if (!map.hasLayer(marker)) { searchInput.value = ''; applyEventsFilter(); }
-    map.setView(marker.getLatLng(), Math.max(map.getZoom(), LINK_ZOOM), { animate: false });
-    showCard(marker);
+    focusMarker(marker);
     return true;
   }
 
@@ -1120,7 +1161,8 @@
     N.showState('ready');
     // pinch and double-tap zoom on (the only zoom on phones, where the + / − buttons are hidden by CSS)
     map = L.map('recos-map', { zoomControl: false, touchZoom: true, doubleClickZoom: true }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
-    cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map) : null;   // phone cards
+    cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map, { onClose: clearSelection }) : null;   // phone cards
+    map.on('popupclose', function (e) { if (selected && e.popup === selected.getPopup()) clearSelection(); });
     map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
     showBadgesForZoom();
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -1144,7 +1186,7 @@
     if (params.get('view') === 'dinners' && linkedClub && window.NinesClubSwitch) window.NinesClubSwitch.set(linkedClub);
     var startMode = params.get('view') === 'dinners' ? 'events' : linked ? 'recos' : readMode();
     if (startMode === 'recos') showTip();
-    refresh(UUID.test(linked || '') ? linked : null).then(async function () {
+    refresh(UUID.test(linked || '') ? linked : null, true).then(async function () {
       if (startMode !== 'events') { saveMode('recos'); return; }
       await setMode('events', !linkedDinner);
       if (linkedDinner && !openDinner(linkedDinner)) fitDinners();

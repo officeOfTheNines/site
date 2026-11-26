@@ -306,9 +306,29 @@ unchanged.
 - `recos.html?venue=<venue id>` (home activity feed): that reco, centred, with its card open.
 - `recos.html?view=dinners&dinner=<club_event id>&club=<club id>` (home dinner panel: the venue in "Our last
   dinner at …" and in the next-dinner tile): the Dinners view of that club (a member of several clubs is
-  switched to it), centred and zoomed (zoom 17) on that dinner's pin, with its card open (bottom sheet on phones,
+  switched to it), centred (in the visible map, above the phone sheet) at zoom 16 on that dinner's pin, selected,, with its card open (bottom sheet on phones,
   popup on wider screens). Ids only, never names or personal data. If the dinner is not on the member's map, the
   Dinners view opens as usual, without an error. The map's back button and the browser's back return home.
+
+#### Selected marker (member map)
+
+- Whenever a card is open (a tapped pin, a search result, or a link), its pin is **selected**:
+  - a coral (#e8664f) halo pulses behind it: a 6 px ring at 28% and a 24 px glow, 55%–100% every 1.6 s;
+  - its circle grows by 6 px and it is raised above every other pin;
+  - every other pin fades to 45% (0.3 s).
+
+  On a season winner, the halo sits behind the gold ring and spikes, so both show. With reduced motion there's
+  no pulse, and the halo is static at full strength.
+- **Clearing** removes all of it (halo, size, layering, fading):
+  - a tap on the empty map;
+  - closing the card (X, swipe down, Escape);
+  - another pin, which moves the selection to it;
+  - switching Recos / Dinners, the club or the score;
+  - any redraw.
+
+  It also removes a link's dinner or venue id from the address bar, so a refresh does not reselect it.
+- **Opened by a link:** the card opens and the map flies (0.6 s) to street level (zoom 16), with the pin in the
+  middle of the visible map. On phones that's above the sheet: the centre moves up by half the sheet's height.
 
 #### Cards on phones: bottom sheet (member map)
 

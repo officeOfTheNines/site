@@ -1,10 +1,12 @@
 // Phone bottom sheet for map cards, copied from the public dinner map (map.thenines.club): same breakpoint
 // (700px), states, animation and gestures. On wider screens the page keeps its Leaflet popups.
 //
-//   var sheet = NinesCardSheet.create(map)      // map: the Leaflet map (for nudging the pin above the sheet)
+//   var sheet = NinesCardSheet.create(map, { onClose: fn })   // map: the Leaflet map; onClose: when it closes
 //   NinesCardSheet.isPhone()                    // true up to 700px wide
-//   sheet.show(node, latlng)                    // put a card in the sheet and slide it up to "peek"
+//   sheet.show(node, latlng, { nudge: false })  // put a card in the sheet and slide it up to "peek" (nudge: move
+//                                               // the map so the pin shows above it; default true)
 //   sheet.close()
+//   sheet.peekHeight()                          // how much of the screen the sheet covers now (0 when closed)
 //
 // States: closed | peek (up to the card's .peek-end element) | open (full height, scrolls).
 //   - drag the bar (or the peeking card) up more than 50px: open; down: peek, or close from peek
@@ -16,7 +18,8 @@
   var QUERY = '(max-width: 700px)';
   function isPhone() { return window.matchMedia(QUERY).matches; }
 
-  function create(map) {
+  function create(map, options) {
+    var opts = options || {};
     var panel = document.createElement('aside');
     panel.className = 'card-sheet';
     panel.setAttribute('aria-label', 'Selected restaurant');
@@ -35,12 +38,14 @@
     var lastLatLng = null;
 
     function set(next) {
+      var was = state;
       state = next;
       panel.classList.toggle('sheet-peek', next === 'peek');
       panel.classList.toggle('sheet-open', next === 'open');
       if (next !== 'open') panel.scrollTop = 0;
       grab.setAttribute('aria-label', next === 'open' ? 'Show less' : 'Show more details');
       if (next === 'closed') panel.setAttribute('aria-hidden', 'true'); else panel.removeAttribute('aria-hidden');
+      if (next === 'closed' && was !== 'closed' && opts.onClose) opts.onClose();
     }
 
     function close() {
@@ -70,12 +75,12 @@
       }
     }
 
-    function show(node, latlng) {
+    function show(node, latlng, showOptions) {
       body.replaceChildren(node);
       lastLatLng = latlng || null;
       set('peek');
       updatePeek();
-      showPinAboveSheet(lastLatLng);
+      if (!showOptions || showOptions.nudge !== false) showPinAboveSheet(lastLatLng);
     }
 
     function offset() {
@@ -133,7 +138,8 @@
     window.addEventListener('resize', function () { if (!isPhone()) close(); else if (state !== 'closed') updatePeek(); });
 
     set('closed');
-    return { show: show, close: close, isOpen: function () { return state !== 'closed'; }, state: function () { return state; } };
+    return { show: show, close: close, isOpen: function () { return state !== 'closed'; }, state: function () { return state; },
+             peekHeight: function () { return state === 'closed' ? 0 : state === 'open' ? panel.offsetHeight : peekHeight(); } };
   }
 
   window.NinesCardSheet = { create: create, isPhone: isPhone };

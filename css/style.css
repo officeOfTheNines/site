@@ -1058,7 +1058,31 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .dc-actions { display: flex; gap: 8px; margin-top: 18px; }
 .dc-actions .dc-menu { flex: 1 1 0; margin-top: 0; text-decoration: none; }
 
+/* ---------- Selected marker (its card is open): coral halo, +6px, raised; the other pins fade ----------
+   The halo sits behind the circle (and behind a winner's gold ring and spikes, so a selected winner shows
+   both): a 6px ring at 28% and a 24px glow, pulsing between 55% and 100% every 1.6s. */
+.leaflet-marker-icon.pin, .leaflet-marker-icon.reco-pin { transition: opacity 0.3s ease; }
+.has-selection .leaflet-marker-icon.pin:not(.is-selected),
+.has-selection .leaflet-marker-icon.reco-pin:not(.is-selected) { opacity: 0.45; }
+.pin.is-selected .pin-dot { width: 34px; height: 34px; }
+.pin--winner.is-selected .pin-ring { left: 4px; top: 4px; width: 36px; height: 36px; }
+.pin--winner.is-selected .pin-spike:nth-child(1) { transform: rotate(0deg) translate(-2.25px, -23px); }
+.pin--winner.is-selected .pin-spike:nth-child(2) { transform: rotate(90deg) translate(-2.25px, -23px); }
+.pin--winner.is-selected .pin-spike:nth-child(3) { transform: rotate(180deg) translate(-2.25px, -23px); }
+.pin--winner.is-selected .pin-spike:nth-child(4) { transform: rotate(270deg) translate(-2.25px, -23px); }
+.reco-pin.is-selected span { width: 28px; height: 28px; margin: -3px; }
+.leaflet-marker-icon.pin.is-selected::before, .leaflet-marker-icon.reco-pin.is-selected::before {
+  content: ''; position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px;
+  border-radius: 50%; z-index: -1; pointer-events: none;
+  box-shadow: 0 0 0 6px rgba(232, 102, 79, 0.28), 0 0 24px 2px rgba(232, 102, 79, 0.9);
+  animation: pin-glow 1.6s ease-in-out infinite;
+}
+.leaflet-marker-icon.pin--winner.is-selected::before { width: 36px; height: 36px; margin: -18px 0 0 -18px; }
+.leaflet-marker-icon.reco-pin.is-selected::before { width: 28px; height: 28px; margin: -14px 0 0 -14px; }
+@keyframes pin-glow { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
 @media (prefers-reduced-motion: reduce) {
+  .leaflet-marker-icon.is-selected::before { animation: none !important; opacity: 1; }   /* static halo, full strength */
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
