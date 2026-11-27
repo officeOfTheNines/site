@@ -36,7 +36,14 @@ create table if not exists public.clubs (
   map_url     text,
   created_on  timestamptz not null default now(),
   rating_scale smallint not null default 10,   -- dinner ratings are out of this (The Nines 10, Les Ronds 20)
-  constraint clubs_rating_scale check (rating_scale between 1 and 100)
+  map_center_lat   double precision,           -- member map home (centre and zoom); the page falls back to
+  map_center_lng   double precision,           -- the club's city when empty
+  map_default_zoom smallint,
+  constraint clubs_rating_scale check (rating_scale between 1 and 100),
+  constraint clubs_map_home check (
+    (map_center_lat is null or map_center_lat between -90 and 90)
+    and (map_center_lng is null or map_center_lng between -180 and 180)
+    and (map_default_zoom is null or map_default_zoom between 1 and 19))
 );
 
 -- Access, per club (one row per person per club).
@@ -145,9 +152,9 @@ create index if not exists brigadier_group_members_profile_idx on public.brigadi
 -- Clubs and the first admins (left alone if already present)
 -- ---------------------------------------------------------------------------
 
-insert into public.clubs (id, slug, name, site_url, map_url, rating_scale) values
-  (1, 'nines',    'The Nines',       'https://site.thenines.club/',          'https://map.thenines.club',   10),
-  (2, 'lesronds', 'Dîner des Ronds', 'https://site.thenines.club/lesronds/', 'https://ronds.thenines.club', 20)
+insert into public.clubs (id, slug, name, site_url, map_url, rating_scale, map_center_lat, map_center_lng, map_default_zoom) values
+  (1, 'nines',    'The Nines',       'https://site.thenines.club/',          'https://map.thenines.club',   10, 51.5074, -0.1278, 12),
+  (2, 'lesronds', 'Dîner des Ronds', 'https://site.thenines.club/lesronds/', 'https://ronds.thenines.club', 20, 48.8566,  2.3522, 12)
 on conflict (id) do nothing;
 
 insert into public.super_admins (email, added_by) values ('jbsolanet@gmail.com', 'schema.sql')
