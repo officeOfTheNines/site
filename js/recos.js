@@ -18,7 +18,11 @@
     club: 'My club: only members of the club you post as can see it.',
     me: 'Only me: nobody else can see it.'
   };
-  var CENTRES = { 1: [51.5072, -0.1276], 2: [48.8566, 2.3522] }; // London, Paris
+  // Each club's map home: where the map opens and returns to (club switch, Recos <-> Dinners). Read from
+  // clubs (map_center_lat, map_center_lng, map_default_zoom, migration 015); these are only used when the
+  // database has no value yet (or cannot be read): central London and central Paris.
+  var HOMES = { 1: { lat: 51.5074, lng: -0.1278, zoom: 12 }, 2: { lat: 48.8566, lng: 2.3522, zoom: 12 } };
+  var HOME_FLY_S = 0.6;      // the short animation when the map goes home
   // Where the back arrow goes: this club's member home (club news and recent activity).
   // Change it here if the home page moves.
   var BACK_URL = 'index.html';
@@ -209,6 +213,48 @@
     if (cardSheet) cardSheet.close();
     clearSelection();
   }
+  // ---- The club's map home ----
+  // Never another club's: the home of the current club only (the default only when nothing is known).
+  function clubHome(clubId) {
+    return HOMES[clubId] || HOMES[homeClub && homeClub.id] || HOMES[1];
+  }
+  async function loadHomes() {
+    try {
+      var result = await client.from('clubs').select('id, map_center_lat, map_center_lng, map_default_zoom');
+      if (result.error) return;   // e.g. migration 015 not run yet: the defaults above
+      (result.data || []).forEach(function (c) {
+        if (typeof c.map_center_lat !== 'number' || typeof c.map_center_lng !== 'number') return;
+        HOMES[c.id] = { lat: c.map_center_lat, lng: c.map_center_lng,
+                        zoom: typeof c.map_default_zoom === 'number' ? c.map_default_zoom : 12 };
+      });
+    } catch (e) { /* the defaults above */ }
+  }
+  // Not while the member has a finger or the mouse on the map (panning, pinching), nor once they have
+  // pressed "find me" (until they switch Recos / Dinners, which always goes home).
+  var pointersOnMap = 0;
+  var locatePressed = false;
+  function memberIsMoving() {
+    return pointersOnMap > 0 || (map.dragging && map.dragging.moving && map.dragging.moving());
+  }
+  function goHome(force) {
+    if (!force && (locatePressed || memberIsMoving())) return false;
+    if (force) locatePressed = false;
+    var home = clubHome(currentClubId());
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.flyTo([home.lat, home.lng], home.zoom, { animate: !reduce, duration: HOME_FLY_S });
+    return true;
+  }
+  function watchMember() {
+    var box = map.getContainer();
+    box.addEventListener('pointerdown', function () { pointersOnMap += 1; }, true);
+    ['pointerup', 'pointercancel'].forEach(function (type) {
+      document.addEventListener(type, function () { pointersOnMap = Math.max(0, pointersOnMap - 1); }, true);
+    });
+    box.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('.locate-button')) locatePressed = true;
+    }, true);
+  }
+
   // Opened by a link: open the card, then fly so the pin sits in the middle of the visible map (on phones,
   // above the sheet: the centre moves up by half the sheet's height), at street level.
   function focusMarker(marker) {
@@ -302,14 +348,6 @@
       markers[place.id] = marker;
     });
     applyFilter();
-    fitShown();
-  }
-
-  function fitShown() {
-    var shown = places.filter(inScope);
-    if (shown.length) {
-      map.fitBounds(L.latLngBounds(shown.map(function (p) { return [p.lat, p.lng]; })), { padding: [40, 40], maxZoom: 15 });
-    }
   }
 
   // ---- Search (top bar) ----
@@ -741,8 +779,8 @@
     var seq = ++searchSeq;
     searchStatus.textContent = 'Searching…';
     try {
-      var centre = CENTRES[homeClub.id] || CENTRES[1];
-      var found = await window.NinesPlaces.searchPlaces(text, { lat: centre[0], lng: centre[1] });
+      var centre = clubHome(currentClubId());
+      var found = await window.NinesPlaces.searchPlaces(text, { lat: centre.lat, lng: centre.lng });
       if (seq !== searchSeq) return;
       resultsNode.replaceChildren();
       searchStatus.textContent = found.length ? '' : 'No places found. Try another spelling, or paste a Google Maps link.';
@@ -941,12 +979,6 @@
     return true;
   }
 
-  function fitDinners() {
-    if (dinnerVenues.length) {
-      map.fitBounds(L.latLngBounds(dinnerVenues.map(function (v) { return [v.lat, v.lng]; })), { padding: [48, 48], maxZoom: 15 });
-    }
-  }
-
   async function openMenu(url) {
     if (/^https:\/\//.test(url)) { window.open(url, '_blank', 'noopener'); return; }
     var tab = window.open('', '_blank');   // opened now, so the browser does not block it
@@ -1076,8 +1108,9 @@
     });
   }
 
-  // Switch between the recos and the dinners. The map keeps its position and zoom.
-  async function setMode(next, fit) {
+  // Switch between the recos and the dinners. The map goes to the current club's home (recentre false:
+  // the page was opened by a link to one dinner, which centres the map itself).
+  async function setMode(next, recentre) {
     mode = next;
     saveMode(next);
     var ev = next === 'events';
@@ -1092,12 +1125,12 @@
     searchInput.placeholder = ev ? 'Search dinners' : 'Search recos';
     closeCards();
     closeResults();
+    if (recentre) goHome(true);
     if (ev) {
       tipNode.hidden = true;
       if (!addPanel.hidden) closeAdd();
       if (dinnerClubId !== currentClubId()) {
         try { await loadDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); return; }
-        if (fit) fitDinners();
       } else {
         applyEventsFilter();
       }
@@ -1110,20 +1143,20 @@
   }
 
   modeOptions.forEach(function (b) {
-    b.addEventListener('click', function () { if (b.dataset.mode !== mode) setMode(b.dataset.mode, false); });
+    b.addEventListener('click', function () { if (b.dataset.mode !== mode) setMode(b.dataset.mode, true); });
   });
   // arrow keys move between the two options, as in any radio group
   modeToggle.addEventListener('keydown', function (e) {
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].indexOf(e.key) === -1) return;
     e.preventDefault();
     var next = mode === 'events' ? 'recos' : 'events';
-    setMode(next, false);
+    setMode(next, true);
     modeOptions.forEach(function (b) { if (b.dataset.mode === next) b.focus(); });
   });
 
   // ---- Start ----
 
-  N.guardMembersPage().then(function (access) {
+  N.guardMembersPage().then(async function (access) {
     if (!access) return;
     homeClub = N.pickClub(access, false);
     // the clubs this person can post as (default: this site's club)
@@ -1155,12 +1188,18 @@
         closeCards();
         applyFilter();
         if (searchInput.value.trim()) showResults();
-        fitShown();
       });
     }
+    var params = new URLSearchParams(window.location.search);
+    var linkedClub = /^[0-9]+$/.test(params.get('club') || '') ? Number(params.get('club')) : null;
+    if (params.get('view') === 'dinners' && linkedClub && window.NinesClubSwitch) window.NinesClubSwitch.set(linkedClub);
+    await loadHomes();
     N.showState('ready');
-    // pinch and double-tap zoom on (the only zoom on phones, where the + / − buttons are hidden by CSS)
-    map = L.map('recos-map', { zoomControl: false, touchZoom: true, doubleClickZoom: true }).setView(CENTRES[homeClub.id] || CENTRES[1], 13);
+    // opens on the current club's home; pinch and double-tap zoom on (the only zoom on phones, where the
+    // + / − buttons are hidden by CSS)
+    var start = clubHome(currentClubId());
+    map = L.map('recos-map', { zoomControl: false, touchZoom: true, doubleClickZoom: true }).setView([start.lat, start.lng], start.zoom);
+    watchMember();
     cardSheet = window.NinesCardSheet ? window.NinesCardSheet.create(map, { onClose: clearSelection }) : null;   // phone cards
     map.on('popupclose', function (e) { if (selected && e.popup === selected.getPopup()) clearSelection(); });
     map.on('zoomend', showBadgesForZoom);   // season badges only from BADGE_ZOOM
@@ -1178,25 +1217,23 @@
     //   recos.html?view=dinners&dinner=<club_event id>&club=<club id>   (home dinner panel) the Dinners view
     //       of that club, centred and zoomed on that dinner's pin with its card open; if the dinner is not
     //       on the member's map, the Dinners view opens as usual, without an error.
-    var params = new URLSearchParams(window.location.search);
     var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     var linked = params.get('venue');
     var linkedDinner = params.get('view') === 'dinners' && UUID.test(params.get('dinner') || '') ? params.get('dinner') : null;
-    var linkedClub = /^[0-9]+$/.test(params.get('club') || '') ? Number(params.get('club')) : null;
-    if (params.get('view') === 'dinners' && linkedClub && window.NinesClubSwitch) window.NinesClubSwitch.set(linkedClub);
     var startMode = params.get('view') === 'dinners' ? 'events' : linked ? 'recos' : readMode();
     if (startMode === 'recos') showTip();
     refresh(UUID.test(linked || '') ? linked : null, true).then(async function () {
       if (startMode !== 'events') { saveMode('recos'); return; }
-      await setMode('events', !linkedDinner);
-      if (linkedDinner && !openDinner(linkedDinner)) fitDinners();
+      await setMode('events', false);   // the map is already on the club's home
+      if (linkedDinner) openDinner(linkedDinner);   // not on the member's map: stays on the home
     });
     // the current club (members of several clubs): its dinners and scale, in place
     if (window.NinesClubSwitch) {
       window.NinesClubSwitch.onChange(async function () {
-        if (mode !== 'events') { dinnerClubId = null; return; }
         closeCards();
-        try { await loadDinners(); fitDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); }
+        goHome(false);   // the new club's home (not while the member is moving the map or used "find me")
+        if (mode !== 'events') { dinnerClubId = null; return; }
+        try { await loadDinners(); } catch (error) { showError('Could not load the dinners. ' + N.friendlyError(error)); }
       });
     }
   });
