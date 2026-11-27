@@ -11,8 +11,6 @@
   var el = N.el;
   var fr = N.lang === 'fr';
   var dateFormat = new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  var timeFormat = new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-  var CONTACT = 'Please contact us directly';
 
   var box = null;
   var dialog = null;
@@ -89,44 +87,87 @@
       section.appendChild(await brigadierFaces(row.brigadiers));
     }
 
+    // The member's own reply only (never anyone else's). Every rule comes from the database:
+    //   can_answer        the reply button works now (replies open, before the deadline, not locked, and
+    //                     either no answer yet or within the hour after the first one)
+    //   can_change_until  end of that hour (shown in the club's time zone)
     var reply = el('div', { className: 'dinner-reply' });
     var note = el('p', { className: 'dinner-note', role: 'status' });
-    if (row.my_answer) {
+    var button = null;
+    if (row.my_answer && row.can_answer) {
+      // within the hour: today's behaviour, the answer can still be changed
       reply.appendChild(el('p', { className: 'dinner-answer' }, [
         el('span', { text: 'Your reply:' }), document.createTextNode(' '),
         el('strong', { text: answerText(row.my_answer) })
       ]));
       if (row.can_change_until) {
-        reply.appendChild(el('p', { className: 'muted small', text: 'You can change this until ' + timeFormat.format(new Date(row.can_change_until)) }));
+        reply.appendChild(el('p', { className: 'muted small', text: 'You can change this until ' + clubTime(row.can_change_until) }));
       }
-    } else if (row.rsvp_status === 'closed') {
-      reply.appendChild(el('p', { className: 'muted', text: 'Replies are closed.' }));
+      button = el('button', { type: 'button', className: 'button secondary', text: 'Change my reply' });
+    } else if (row.my_answer) {
+      // the hour has passed, replies are closed, the deadline has passed, or an admin set it: read only
+      reply.appendChild(el('p', { className: 'dinner-answer' }, [
+        el('strong', { text: row.my_answer === 'attending' ? 'You replied: Attending' : 'You replied: Not attending' })
+      ]));
+      reply.appendChild(el('p', { className: 'muted small', text: 'To change your answer, please contact us directly.' }));
+    } else if (row.can_answer) {
+      button = el('button', { type: 'button', className: 'button', text: 'Reply' });   // the hour starts at the first answer
+    } else {
+      reply.appendChild(el('p', { className: 'muted', text: 'No reply recorded. Please contact us directly.' }));
     }
-    var button = el('button', { type: 'button', className: row.my_answer ? 'button secondary' : 'button',
-                                text: row.my_answer ? 'Change my reply' : 'Reply' });
-    button.addEventListener('click', async function () {
-      note.textContent = '';
-      if (!row.can_answer) { note.textContent = CONTACT; return; }
-      var choice = await ask(dayText(row.event_date) + (row.venue_name ? ' · ' + row.venue_name : ''));
-      if (!choice) return;
-      button.disabled = true;
-      var result = await N.client.rpc('rsvp_answer', { p_event: row.event_id, p_answer: choice });
-      button.disabled = false;
-      if (result.error || result.data !== 'ok') { note.textContent = CONTACT; return; }
-      refreshClub(club);
-    });
-    reply.appendChild(button);
+    if (button) {
+      button.addEventListener('click', async function () {
+        note.textContent = '';
+        var choice = await ask(dayText(row.event_date) + (row.venue_name ? ' · ' + row.venue_name : ''));
+        if (!choice) return;
+        button.disabled = true;
+        var result = await N.client.rpc('rsvp_answer', { p_event: row.event_id, p_answer: choice });
+        button.disabled = false;
+        // refused (the hour just ended, replies closed meanwhile...): show the database's current state
+        if (result.error || result.data !== 'ok') { await refreshClub(club); return; }
+        refreshClub(club);
+      });
+    }
+    if (button) reply.appendChild(button);
     reply.appendChild(note);
     section.appendChild(reply);
     return section;
   }
 
-  async function refreshClub(club) {
+  // Asks the database for the club's panel. A failed request never removes a panel already shown: it is
+  // kept and the request is tried again shortly. The panel is asked for again when the change hour ends and
+  // whenever the page comes back into view, so its state always comes from the server, not the phone's clock.
+  var refreshTimer = null;
+  async function refreshClub(club, attempt) {
     var slot = box.querySelector('[data-club="' + club.club_id + '"]');
     if (!slot) return;
     var result = await N.client.rpc('home_dinner_panel', { p_club: club.club_id });
-    if (result.error || !result.data || !result.data.length) { slot.replaceChildren(); return; }
-    slot.replaceChildren(await renderPanel(club, result.data[0], clubs.length > 1));
+    if (result.error) {
+      if ((attempt || 0) < 3) setTimeout(function () { refreshClub(club, (attempt || 0) + 1); }, 2000 * ((attempt || 0) + 1));
+      return;   // keep whatever is shown
+    }
+    if (!result.data || !result.data.length) { slot.replaceChildren(); return; }   // really no dinner to show
+    var row = result.data[0];
+    slot.replaceChildren(await renderPanel(club, row, clubs.length > 1));
+    clearTimeout(refreshTimer);
+    if (row.can_change_until) {
+      var wait = new Date(row.can_change_until).getTime() - Date.now();
+      // ask again just after the hour ends (the server decides; at most once a minute if the clocks differ)
+      refreshTimer = setTimeout(function () { refreshClub(club); }, Math.min(Math.max(wait + 5000, 60000), 2147483000));
+    }
+  }
+
+  // "14:32" in the club's time zone, not the phone's
+  var tzByClub = {};
+  var currentTz = null;
+  function clubTime(ts) {
+    return new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { timeZone: currentTz || undefined, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts));
+  }
+  async function loadTimezone(clubId) {
+    if (tzByClub[clubId] !== undefined) { currentTz = tzByClub[clubId]; return; }
+    var r = await N.client.from('clubs').select('timezone').eq('id', clubId).maybeSingle();
+    tzByClub[clubId] = (!r.error && r.data && r.data.timezone) || null;
+    currentTz = tzByClub[clubId];
   }
 
   function start(access) {
@@ -136,16 +177,22 @@
     // the member's current club (js/club-switch.js; members of one club: their club)
     clubs = (access.clubs || []).filter(function (c) { return c.role; });
     var sw = window.NinesClubSwitch;
+    var shown = null;   // the club whose panel is on the page
     function show() {
       var wanted = sw ? sw.get().club_id : N.pickClub(access, false).id;
       var club = clubs.find(function (c) { return c.club_id === wanted; }) || clubs[0];
       box.replaceChildren();
       if (!club) return;
       box.appendChild(el('div', { 'data-club': String(club.club_id) }));
-      refreshClub(club);
+      loadTimezone(club.club_id).then(function () { refreshClub(club); });
+      shown = club;
     }
     show();
     if (sw) sw.onChange(show);
+    // back to the page (another tab, the phone unlocked): ask the server again
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible' && shown) refreshClub(shown);
+    });
   }
 
   window.NinesDinner = { start: start };
