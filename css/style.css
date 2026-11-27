@@ -1173,3 +1173,45 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 @media (max-width: 700px) {
   .recos-page .leaflet-control-zoom { display: none; }
 }
+
+/* ---------- Dinners admin screen (members/dinners.html) ---------- */
+.message.warning { border-color: var(--brass); color: var(--text); }
+.back-link { padding-left: 0; margin-bottom: 4px; }
+.admin-dinners-group { font-family: var(--font-body); font-size: 0.85rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 20px 0 8px; }
+.admin-dinners { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.admin-dinner { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.admin-dinner.is-past { opacity: 0.85; }
+.admin-dinner-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.admin-dinner-date { margin: 0; font-weight: 600; }
+.admin-dinner-venue { margin: 6px 0 0; font-family: var(--font-title); font-size: 1.3rem; overflow-wrap: anywhere; }
+.admin-dinner-brigadiers { margin: 2px 0 0; overflow-wrap: anywhere; }
+.status-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; border: 1px solid var(--border); color: var(--muted); }
+.status-badge.status-open { border-color: var(--brass); color: var(--brass); }
+.status-badge.status-closed { color: var(--muted); }
+.admin-dinner-counts, .reply-totals { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.9rem; }
+.admin-dinner-counts .count-label, .reply-totals .count-label { color: var(--muted); }
+.admin-dinner .row-actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.dinner-form fieldset.field { border: 0; padding: 0; margin: 0 0 18px; }
+.venue-current { margin: 0 0 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
+.venue-results { list-style: none; margin: 6px 0 0; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); max-height: 260px; overflow-y: auto; }
+.venue-results li + li { border-top: 1px solid var(--border); }
+.venue-option { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: var(--touch); padding: 8px 12px; background: none; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.venue-option:hover, .venue-option:focus-visible { background: var(--page); }
+.new-group { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+@media (max-width: 520px) { .new-group { grid-template-columns: 1fr; } }
+.open-hint { color: var(--brass); }
+.reply-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+.reply-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.reply-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.reply-name { font-weight: 600; overflow-wrap: anywhere; }
+.reply-answer { display: flex; flex-direction: column; gap: 2px; }
+.reply-row .row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.answer-badge { font-weight: 600; }
+.answer-badge.answer-attending { color: var(--success); }
+.answer-badge.answer-not_attending { color: var(--danger); }
+.answer-badge.answer-none { color: var(--muted); font-weight: 500; }
+.button.small { min-height: 36px; padding: 4px 12px; font-size: 0.85rem; }
+@media (max-width: 640px) {
+  .reply-row { grid-template-columns: 1fr; }
+  .reply-row .row-actions { justify-content: flex-start; }
+}

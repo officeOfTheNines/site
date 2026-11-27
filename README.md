@@ -301,6 +301,32 @@ unchanged.
 - **Copy address** is on the public dinner maps only (it copies "name, address, postcode"); the member map's
   Reco and Dinner cards show the address and Directions, without it.
 
+#### Dinners admin screen (members/dinners.html)
+
+Club admins only (super admins: every club, with the club picker). There's no menu item for members, and the page
+sends anyone who isn't an admin back to the member home. The screen calls only existing database functions, each
+of which checks the caller is an admin of the dinner's club.
+- **List:** upcoming dinners first, soonest first; then past ones, newest first (`admin_club_events`). Each card
+  shows the date, the venue or "Venue to be announced", the brigadiers and the status. Upcoming dinners also show
+  Attending / Not attending / No answer; No answer counts the club's active members without an answer, from
+  `admin_event_answers`.
+- **Add / edit:**
+  - date only;
+  - venue from `admin_venue_options`, or none ("Venue to be announced": no pin on the map, home panel shows the
+    date and brigadiers);
+  - an existing brigadier group, or a new one from two members (`admin_save_brigadier_group`);
+  - replies status (`admin_set_rsvp_status`), with "Members will see this dinner on their home page" when
+    opening;
+  - an optional deadline in the club's time zone (`admin_set_rsvp_deadline`).
+
+  It warns about another dinner on the same date and asks before saving changes to a past dinner. There's no
+  delete, only **Close dinner** (status closed).
+- **Replies:** totals, every member with their answer, its time and who set it, a filter (All / Attending /
+  Not attending / No answer yet), Force attending / not attending / Clear (`admin_set_answer`; a forced answer
+  is locked for the member), and a CSV export.
+- French labels on Les Ronds: Dîners, Ajouter un dîner, Lieu à annoncer, Participe, Ne participe pas, Sans
+  réponse. The same words are now used on the home panel too.
+
 #### Links into the member map
 
 - `recos.html?venue=<venue id>` (home activity feed): that reco, centred, with its card open.

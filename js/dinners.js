@@ -1,7 +1,16 @@
-// Dinners admin page (members/dinners.html): the club's calendar and each dinner's replies.
-// Club admins only; every action is a database function that checks the caller is an admin of that
-// club (admin_club_events, admin_save_event, admin_set_rsvp_status, admin_set_rsvp_deadline,
-// admin_event_answers, admin_set_answer, admin_venue_options, admin_brigadier_group_options).
+// Dinners admin screen (members/dinners.html): the club's dinners, adding / editing one, and its replies.
+// Club admins of that club only (super admins: every club). Normal members never get here: the menu item
+// is admin-only and this page sends anyone else straight back to the member home.
+// Every action is an existing database function that checks the caller is an admin of the dinner's club:
+//   list ............................ admin_club_events(club)
+//   "No answer" counts, Replies ..... admin_event_answers(dinner)   (every active member and their answer)
+//   add / edit (date, venue, group) . admin_save_event(club, date, venue, group, dinner)
+//   status, "Close dinner" .......... admin_set_rsvp_status(dinner, status)
+//   deadline ........................ admin_set_rsvp_deadline(dinner, deadline)   (entered in the club's time zone)
+//   venue search .................... admin_venue_options(query)
+//   brigadier groups ................ admin_brigadier_group_options(club); a new one: admin_save_brigadier_group
+//   force / clear an answer ......... admin_set_answer(dinner, member, answer or null)
+// Nothing is ever deleted from here.
 (function () {
   'use strict';
 
@@ -14,130 +23,92 @@
   var client = N.client;
   var el = N.el;
   var fr = N.lang === 'fr';
-  var dayFormat = new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-  var stampFormat = new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
-  var STATUS = [
-    { value: 'not_open', label: 'Not open' },   // hidden from members
-    { value: 'open', label: 'Open' },
-    { value: 'closed', label: 'Closed' }
-  ];
+  var T = function (s) { return window.NinesI18n ? window.NinesI18n.translate(s) : s; };
+  var STATUS_TEXT = { not_open: 'Not open', open: 'Open', closed: 'Closed' };
+  var NEW_GROUP = 'new';
 
   var club = null;
+  var tz = 'Europe/London';
   var events = [];
   var groups = [];
-  var editing = null;        // the event being edited, or null when adding
-  var chosenVenue = null;    // { id, name }
-  var replies = { event: null, rows: [] };
+  var members = [];          // [{ id, name }] of the club, for a new brigadier group
+  var editing = null;        // the dinner being edited, or null when adding
+  var chosenVenue = null;    // { id, name } or null = venue to be announced
+  var replies = { event: null, rows: [], filter: 'all' };
 
   var errorBox = document.getElementById('dinners-error');
   var statusBox = document.getElementById('dinners-status');
+  var views = { list: document.getElementById('view-list'), form: document.getElementById('view-form'), replies: document.getElementById('view-replies') };
   var form = document.getElementById('event-form');
   var dateInput = document.getElementById('event-date');
-  var groupSelect = document.getElementById('event-group');
+  var dateWarning = document.getElementById('date-warning');
+  var venueCurrent = document.getElementById('venue-current');
+  var venueClear = document.getElementById('venue-clear');
   var venueQuery = document.getElementById('venue-query');
-  var venueChoice = document.getElementById('venue-choice');
+  var venueResults = document.getElementById('venue-results');
+  var groupSelect = document.getElementById('event-group');
+  var newGroup = document.getElementById('new-group');
+  var newGroup1 = document.getElementById('new-group-1');
+  var newGroup2 = document.getElementById('new-group-2');
+  var statusSelect = document.getElementById('event-status');
+  var openHint = document.getElementById('open-hint');
+  var deadlineInput = document.getElementById('event-deadline');
   var saveButton = document.getElementById('event-save');
-  var cancelEdit = document.getElementById('event-cancel');
-  var showPast = document.getElementById('show-past');
+  var closeButton = document.getElementById('event-close');
+  var addButton = document.getElementById('add-dinner');
 
   function showError(text) { statusBox.textContent = ''; errorBox.textContent = text || ''; }
   function showStatus(text) { errorBox.textContent = ''; statusBox.textContent = text || ''; }
-  function fail(prefix, error) { showError(prefix + ' ' + ((error && error.message) || N.friendlyError(error))); }
+  function fail(prefix, error) { showError(prefix + ' ' + N.friendlyError(error)); }
 
+  function show(view) {
+    Object.keys(views).forEach(function (k) { views[k].hidden = k !== view; });
+    addButton.hidden = view !== 'list';
+    window.scrollTo(0, 0);
+  }
+  document.querySelectorAll('[data-back]').forEach(function (b) {
+    b.addEventListener('click', function () { showError(''); showStatus(''); show('list'); });
+  });
+
+  // ---- Dates and times (dinners have a date only; the deadline is a time in the club's time zone) ----
+
+  var dayFormat = new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   function dayText(iso) {
     var p = String(iso).split('-').map(Number);
     return dayFormat.format(new Date(p[0], p[1] - 1, p[2]));
   }
-  function todayIso() {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function zoneParts(date) {
+    var out = {};
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(date).forEach(function (x) { out[x.type] = x.value; });
+    return out;
   }
-  // timestamptz -> value for <input type="datetime-local"> in the browser's time
-  function toLocalInput(ts) {
+  function clubToday() { var p = zoneParts(new Date()); return p.year + '-' + p.month + '-' + p.day; }
+  // timestamptz -> "YYYY-MM-DDTHH:MM" in the club's time zone (for <input type="datetime-local">)
+  function toClubInput(ts) {
     if (!ts) return '';
-    var d = new Date(ts);
-    var pad = function (n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    var p = zoneParts(new Date(ts));
+    return p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
   }
-  function names(list) { return (list || []).join(', '); }
-
-  // ---- Calendar form ----
-
-  function groupLabel(g) { return 'Group ' + g.id + (g.names && g.names.length ? ': ' + names(g.names) : ''); }
-
-  function fillGroups() {
-    groupSelect.replaceChildren(el('option', { value: '', text: 'Not chosen yet' }));
-    groups.forEach(function (g) { groupSelect.appendChild(el('option', { value: String(g.id), 'data-no-i18n': true, text: groupLabel(g) })); });
+  // "YYYY-MM-DDTHH:MM" in the club's time zone -> ISO timestamp (handles summer time)
+  function fromClubInput(value) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value || '');
+    if (!m) return null;
+    var wanted = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    var guess = wanted;
+    for (var i = 0; i < 3; i++) {
+      var p = zoneParts(new Date(guess));
+      guess += wanted - Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute);
+    }
+    return new Date(guess).toISOString();
   }
-
-  function resetForm() {
-    editing = null;
-    chosenVenue = null;
-    form.reset();
-    venueChoice.hidden = true;
-    venueChoice.replaceChildren();
-    document.getElementById('event-form-heading').textContent = 'Add a dinner';
-    saveButton.textContent = 'Add dinner';
-    cancelEdit.hidden = true;
+  function stampText(ts) {
+    if (!ts) return '';
+    return new Intl.DateTimeFormat(fr ? 'fr-FR' : 'en-GB', { timeZone: tz, day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(ts));
   }
+  function names(list) { return (list || []).join(' & '); }
 
-  function editEvent(ev) {
-    editing = ev;
-    dateInput.value = ev.event_date || '';
-    groupSelect.value = ev.brigadier_group_id ? String(ev.brigadier_group_id) : '';
-    chosenVenue = ev.venue_id ? { id: ev.venue_id, name: ev.venue_name } : null;
-    venueQuery.value = ev.venue_name || '';
-    venueChoice.hidden = true;
-    document.getElementById('event-form-heading').textContent = 'Edit the dinner of ' + dayText(ev.event_date);
-    saveButton.textContent = 'Save dinner';
-    cancelEdit.hidden = false;
-    form.scrollIntoView({ block: 'start' });
-    dateInput.focus();
-  }
-
-  var venueTimer = null;
-  venueQuery.addEventListener('input', function () {
-    chosenVenue = null;
-    clearTimeout(venueTimer);
-    var q = venueQuery.value.trim();
-    if (!q) { venueChoice.hidden = true; return; }
-    venueTimer = setTimeout(async function () {
-      var result = await client.rpc('admin_venue_options', { p_query: q });
-      if (result.error) { fail('Could not search venues.', result.error); return; }
-      venueChoice.replaceChildren(el('option', { value: '', text: result.data.length ? 'Choose a venue…' : 'No venue found' }));
-      result.data.forEach(function (v) {
-        venueChoice.appendChild(el('option', { value: v.id, 'data-no-i18n': true, text: v.name + (v.address ? ' · ' + v.address : '') }));
-      });
-      venueChoice.hidden = false;
-    }, 300);
-  });
-  venueChoice.addEventListener('change', function () {
-    var opt = venueChoice.selectedOptions[0];
-    chosenVenue = venueChoice.value ? { id: venueChoice.value, name: opt.textContent.split(' · ')[0] } : null;
-    if (chosenVenue) venueQuery.value = chosenVenue.name;
-  });
-  cancelEdit.addEventListener('click', resetForm);
-
-  form.addEventListener('submit', async function (e) {
-    e.preventDefault();
-    if (!dateInput.value) { showError('Please choose a date.'); dateInput.focus(); return; }
-    if (venueQuery.value.trim() && !chosenVenue) { showError('Choose the venue from the list, or clear the venue box.'); venueQuery.focus(); return; }
-    saveButton.disabled = true;
-    var result = await client.rpc('admin_save_event', {
-      p_club: club.id,
-      p_event_date: dateInput.value,
-      p_venue_id: chosenVenue ? chosenVenue.id : null,
-      p_brigadier_group_id: groupSelect.value ? Number(groupSelect.value) : null,
-      p_event: editing ? editing.event_id : null
-    });
-    saveButton.disabled = false;
-    if (result.error) { fail('Could not save the dinner.', result.error); return; }
-    showStatus(editing ? 'Dinner saved.' : 'Dinner added. Open it for replies when you are ready.');
-    resetForm();
-    await loadEvents();
-  });
-
-  // ---- Dinners list ----
+  // ---- 1. List ----
 
   async function loadEvents() {
     var result = await client.rpc('admin_club_events', { p_club: club.id });
@@ -145,65 +116,218 @@
     if (result.error) { fail('Could not load the dinners.', result.error); return; }
     events = result.data || [];
     renderEvents();
+    // "No answer": active members without an answer, for upcoming dinners
+    var today = clubToday();
+    events.filter(function (e) { return e.event_date >= today; }).forEach(async function (ev) {
+      var r = await client.rpc('admin_event_answers', { p_event: ev.event_id });
+      if (r.error) return;
+      ev.no_answer = (r.data || []).filter(function (x) { return x.is_member && !x.answer; }).length;
+      var slot = document.querySelector('[data-no-answer="' + ev.event_id + '"]');
+      if (slot) slot.textContent = String(ev.no_answer);
+    });
   }
 
   function renderEvents() {
-    var today = todayIso();
-    var upcoming = events.filter(function (e) { return e.event_date >= today; }).reverse(); // soonest first
-    var past = events.filter(function (e) { return e.event_date < today; });
-    var shown = upcoming.concat(showPast.checked ? past : past.slice(0, 3));
-    var body = document.getElementById('events-body');
-    body.replaceChildren();
-    shown.forEach(function (ev) { body.appendChild(eventRow(ev, ev.event_date >= today)); });
-    document.getElementById('events-table').hidden = shown.length === 0;
+    var today = clubToday();
+    var upcoming = events.filter(function (e) { return e.event_date >= today; })
+      .sort(function (a, b) { return a.event_date < b.event_date ? -1 : a.event_date > b.event_date ? 1 : 0; });
+    var past = events.filter(function (e) { return e.event_date < today; });   // newest first, from the database
+    var upList = document.getElementById('upcoming-list'), pastList = document.getElementById('past-list');
+    upList.replaceChildren.apply(upList, upcoming.map(function (ev) { return eventCard(ev, true); }));
+    pastList.replaceChildren.apply(pastList, past.map(function (ev) { return eventCard(ev, false); }));
+    document.getElementById('upcoming-heading').hidden = !upcoming.length;
+    document.getElementById('past-heading').hidden = !past.length;
+    document.getElementById('events-empty').hidden = events.length > 0;
   }
-  showPast.addEventListener('change', renderEvents);
 
-  function eventRow(ev, upcoming) {
-    var status = el('select', { 'aria-label': 'Replies for ' + dayText(ev.event_date) });
-    STATUS.forEach(function (s) { status.appendChild(el('option', { value: s.value, text: s.label })); });
-    status.value = ev.rsvp_status;
-    status.addEventListener('change', async function () {
-      var result = await client.rpc('admin_set_rsvp_status', { p_event: ev.event_id, p_status: status.value });
-      if (result.error) { fail('Could not change the replies status.', result.error); status.value = ev.rsvp_status; return; }
-      ev.rsvp_status = status.value;
-      showStatus('Replies status saved.');
-    });
+  function count(label, value, slot) {
+    return el('li', null, [el('span', { className: 'count-label', text: label }), document.createTextNode(' '),
+      el('strong', slot ? { 'data-no-answer': slot, text: value } : { text: value })]);
+  }
 
-    var deadline = el('input', { type: 'datetime-local', value: toLocalInput(ev.rsvp_deadline), 'aria-label': 'Reply deadline for ' + dayText(ev.event_date) });
-    deadline.addEventListener('change', async function () {
-      var value = deadline.value ? new Date(deadline.value).toISOString() : null;
-      var result = await client.rpc('admin_set_rsvp_deadline', { p_event: ev.event_id, p_deadline: value });
-      if (result.error) { fail('Could not save the deadline.', result.error); return; }
-      ev.rsvp_deadline = value;
-      showStatus(value ? 'Deadline saved.' : 'Deadline removed.');
-    });
-
+  function eventCard(ev, upcoming) {
     var repliesButton = el('button', { type: 'button', className: 'button secondary', text: 'Replies' });
     repliesButton.addEventListener('click', function () { openReplies(ev); });
-    var editButton = el('button', { type: 'button', className: 'button link', text: 'Edit' });
-    editButton.addEventListener('click', function () { editEvent(ev); });
-
-    return el('tr', { className: upcoming ? '' : 'past-row' }, [
-      el('td', { 'data-label': 'Date', 'data-no-i18n': true, text: dayText(ev.event_date) }),
-      el('td', { 'data-label': 'Venue', 'data-no-i18n': true, text: ev.venue_name || '' }),
-      el('td', { 'data-label': 'Brigadiers', 'data-no-i18n': true, text: names(ev.brigadiers) }),
-      el('td', { 'data-label': 'Replies' }, [status]),
-      el('td', { 'data-label': 'Deadline' }, [deadline]),
-      el('td', { 'data-label': 'Answers', text: ev.attending + ' attending · ' + ev.not_attending + ' not attending' }),
-      el('td', { className: 'actions-cell' }, [el('div', { className: 'row-actions' }, [repliesButton, editButton])])
+    var editButton = el('button', { type: 'button', className: 'button secondary', text: 'Edit' });
+    editButton.addEventListener('click', function () { openForm(ev); });
+    return el('li', { className: 'admin-dinner' + (upcoming ? '' : ' is-past') }, [
+      el('div', { className: 'admin-dinner-head' }, [
+        el('p', { className: 'admin-dinner-date', 'data-no-i18n': true, text: dayText(ev.event_date) }),
+        el('span', { className: 'status-badge status-' + ev.rsvp_status, text: STATUS_TEXT[ev.rsvp_status] || ev.rsvp_status })
+      ]),
+      ev.venue_name
+        ? el('p', { className: 'admin-dinner-venue', 'data-no-i18n': true, text: ev.venue_name })
+        : el('p', { className: 'admin-dinner-venue muted', text: 'Venue to be announced' }),
+      ev.brigadiers && ev.brigadiers.length ? el('p', { className: 'admin-dinner-brigadiers muted', 'data-no-i18n': true, text: names(ev.brigadiers) }) : null,
+      upcoming ? el('ul', { className: 'admin-dinner-counts' }, [
+        count('Attending', String(ev.attending)),
+        count('Not attending', String(ev.not_attending)),
+        count('No answer', ev.no_answer === undefined ? '…' : String(ev.no_answer), ev.event_id)
+      ]) : null,
+      el('div', { className: 'row-actions' }, [repliesButton, editButton])
     ]);
   }
 
-  // ---- Replies for one dinner ----
+  addButton.addEventListener('click', function () { openForm(null); });
+
+  // ---- 2. Add / edit ----
+
+  function fillGroups(selected) {
+    groupSelect.replaceChildren(el('option', { value: '', text: 'No brigadier group yet' }));
+    groups.forEach(function (g) {
+      groupSelect.appendChild(el('option', { value: String(g.id), 'data-no-i18n': true, text: names(g.names) || ('#' + g.id) }));
+    });
+    groupSelect.appendChild(el('option', { value: NEW_GROUP, text: 'New group from two members…' }));
+    groupSelect.value = selected ? String(selected) : '';
+    newGroup.hidden = groupSelect.value !== NEW_GROUP;
+  }
+  function fillMembers() {
+    [newGroup1, newGroup2].forEach(function (s) {
+      s.replaceChildren(el('option', { value: '', text: 'Choose a member' }));
+      members.forEach(function (m) { s.appendChild(el('option', { value: m.id, 'data-no-i18n': true, text: m.name })); });
+    });
+  }
+  groupSelect.addEventListener('change', function () { newGroup.hidden = groupSelect.value !== NEW_GROUP; });
+
+  function setVenue(v) {
+    chosenVenue = v;
+    venueCurrent.textContent = v ? v.name : T('Venue to be announced');
+    venueCurrent.classList.toggle('muted', !v);
+    venueClear.hidden = !v;
+    venueQuery.value = '';
+    venueResults.hidden = true;
+    venueResults.replaceChildren();
+  }
+  venueClear.addEventListener('click', function () { setVenue(null); venueQuery.focus(); });
+
+  var venueTimer = null, venueSeq = 0;
+  venueQuery.addEventListener('input', function () {
+    clearTimeout(venueTimer);
+    var q = venueQuery.value.trim();
+    if (!q) { venueResults.hidden = true; return; }
+    venueTimer = setTimeout(async function () {
+      var seq = ++venueSeq;
+      var result = await client.rpc('admin_venue_options', { p_query: q });
+      if (seq !== venueSeq) return;
+      if (result.error) { fail('Could not search the venues.', result.error); return; }
+      venueResults.replaceChildren();
+      (result.data || []).forEach(function (v) {
+        var b = el('button', { type: 'button', className: 'venue-option' }, [
+          el('span', { className: 'venue-option-name', 'data-no-i18n': true, text: v.name }),
+          v.address ? el('span', { className: 'muted small', 'data-no-i18n': true, text: v.address }) : null
+        ]);
+        b.addEventListener('click', function () { setVenue({ id: v.id, name: v.name }); });
+        venueResults.appendChild(el('li', null, [b]));
+      });
+      if (!result.data || !result.data.length) venueResults.appendChild(el('li', { className: 'muted small', text: 'No venue found.' }));
+      venueResults.hidden = false;
+    }, 250);
+  });
+
+  function sameDateDinner() {
+    return events.find(function (e) { return e.event_date === dateInput.value && (!editing || e.event_id !== editing.event_id); });
+  }
+  function updateDateWarning() {
+    var other = dateInput.value && sameDateDinner();
+    dateWarning.hidden = !other;
+    dateWarning.textContent = other ? T('Another dinner of this club is on the same date:') + ' ' + (other.venue_name || T('Venue to be announced')) : '';
+  }
+  dateInput.addEventListener('input', updateDateWarning);
+  dateInput.addEventListener('change', updateDateWarning);
+
+  function updateOpenHint() { openHint.hidden = statusSelect.value !== 'open'; }
+  statusSelect.addEventListener('change', updateOpenHint);
+
+  function openForm(ev) {
+    editing = ev;
+    showError(''); showStatus('');
+    form.reset();
+    dateInput.value = ev ? ev.event_date : '';
+    setVenue(ev && ev.venue_id ? { id: ev.venue_id, name: ev.venue_name } : null);
+    fillGroups(ev ? ev.brigadier_group_id : null);
+    fillMembers();
+    statusSelect.value = ev ? ev.rsvp_status : 'not_open';
+    deadlineInput.value = ev ? toClubInput(ev.rsvp_deadline) : '';
+    updateOpenHint();
+    updateDateWarning();
+    document.getElementById('form-heading').textContent = ev ? 'Edit the dinner' : 'Add a dinner';
+    saveButton.textContent = ev ? 'Save dinner' : 'Add dinner';
+    closeButton.hidden = !ev || ev.rsvp_status === 'closed';
+    show('form');
+    dateInput.focus();
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    if (!dateInput.value) { showError('Please choose a date.'); dateInput.focus(); return; }
+    var isPast = editing && editing.event_date < clubToday();
+    if (isPast && !window.confirm(T('This dinner is in the past. Save your changes anyway?'))) return;
+    var groupId = groupSelect.value && groupSelect.value !== NEW_GROUP ? Number(groupSelect.value) : null;
+    if (groupSelect.value === NEW_GROUP) {
+      if (!newGroup1.value || !newGroup2.value || newGroup1.value === newGroup2.value) {
+        showError('Choose two different members for the new brigadier group.'); newGroup1.focus(); return;
+      }
+    }
+    saveButton.disabled = true;
+    try {
+      if (groupSelect.value === NEW_GROUP) {
+        var g = await client.rpc('admin_save_brigadier_group', { p_club: club.id, p_group_id: null, p_profile_ids: [newGroup1.value, newGroup2.value] });
+        if (g.error) throw g.error;
+        groupId = g.data;
+        await loadGroups();
+      }
+      var saved = await client.rpc('admin_save_event', {
+        p_club: club.id, p_event_date: dateInput.value, p_venue_id: chosenVenue ? chosenVenue.id : null,
+        p_brigadier_group_id: groupId, p_event: editing ? editing.event_id : null
+      });
+      if (saved.error) throw saved.error;
+      var id = saved.data;
+      var wantStatus = statusSelect.value;
+      if (wantStatus !== (editing ? editing.rsvp_status : 'not_open')) {
+        var st = await client.rpc('admin_set_rsvp_status', { p_event: id, p_status: wantStatus });
+        if (st.error) throw st.error;
+      }
+      var wantDeadline = deadlineInput.value ? fromClubInput(deadlineInput.value) : null;
+      var hadDeadline = editing && editing.rsvp_deadline ? new Date(editing.rsvp_deadline).toISOString() : null;
+      if (wantDeadline !== hadDeadline) {
+        var dl = await client.rpc('admin_set_rsvp_deadline', { p_event: id, p_deadline: wantDeadline });
+        if (dl.error) throw dl.error;
+      }
+      show('list');
+      showStatus(editing ? 'Dinner saved.' : (wantStatus === 'open' ? 'Dinner added and open for replies.' : 'Dinner added. Open it for replies when you are ready.'));
+      editing = null;
+      await loadEvents();
+    } catch (error) {
+      fail('Could not save the dinner.', error);
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  // "Close dinner": replies closed (nothing is ever deleted)
+  closeButton.addEventListener('click', async function () {
+    if (!editing) return;
+    if (!window.confirm(T('Close this dinner? Replies stop; nothing is deleted.'))) return;
+    var r = await client.rpc('admin_set_rsvp_status', { p_event: editing.event_id, p_status: 'closed' });
+    if (r.error) { fail('Could not close the dinner.', r.error); return; }
+    show('list');
+    showStatus('Dinner closed.');
+    editing = null;
+    await loadEvents();
+  });
+
+  // ---- 3. Replies ----
+
+  function answerText(a) { return a === 'attending' ? 'Attending' : a === 'not_attending' ? 'Not attending' : 'No answer yet'; }
 
   async function openReplies(ev) {
     replies.event = ev;
-    var section = document.getElementById('replies');
-    section.hidden = false;
-    document.getElementById('replies-dinner').textContent = dayText(ev.event_date) + (ev.venue_name ? ' · ' + ev.venue_name : '');
+    replies.filter = 'all';
+    showError(''); showStatus('');
+    document.getElementById('replies-dinner').textContent = dayText(ev.event_date) + ' · ' + (ev.venue_name || T('Venue to be announced'));
+    paintFilter();
+    show('replies');
     await loadReplies();
-    section.scrollIntoView({ block: 'start' });
   }
 
   async function loadReplies() {
@@ -213,22 +337,34 @@
     renderReplies();
   }
 
-  function answerLabel(a) { return a === 'attending' ? 'Attending' : a === 'not_attending' ? 'Not attending' : 'No answer yet'; }
+  function paintFilter() {
+    document.querySelectorAll('#replies-filter [data-filter]').forEach(function (b) {
+      b.setAttribute('aria-checked', String(b.dataset.filter === replies.filter));
+    });
+  }
+  document.querySelectorAll('#replies-filter [data-filter]').forEach(function (b) {
+    b.addEventListener('click', function () { replies.filter = b.dataset.filter; paintFilter(); renderReplies(); });
+  });
 
   function renderReplies() {
     var rows = replies.rows;
     var yes = rows.filter(function (r) { return r.answer === 'attending'; }).length;
     var no = rows.filter(function (r) { return r.answer === 'not_attending'; }).length;
-    var none = rows.filter(function (r) { return !r.answer; }).length;
-    document.getElementById('replies-totals').textContent = yes + ' attending · ' + no + ' not attending · ' + none + ' no answer yet';
-    var onlyUnanswered = document.getElementById('replies-unanswered').checked;
-    var body = document.getElementById('replies-body');
-    body.replaceChildren();
-    rows.filter(function (r) { return !onlyUnanswered || !r.answer; }).forEach(function (r) {
+    var none = rows.filter(function (r) { return r.is_member && !r.answer; }).length;
+    var totals = document.getElementById('replies-totals');
+    totals.replaceChildren(count('Attending', String(yes)), count('Not attending', String(no)), count('No answer', String(none)));
+    var list = document.getElementById('replies-list');
+    list.replaceChildren();
+    rows.filter(function (r) {
+      if (replies.filter === 'attending') return r.answer === 'attending';
+      if (replies.filter === 'not_attending') return r.answer === 'not_attending';
+      if (replies.filter === 'none') return !r.answer && r.is_member;
+      return true;
+    }).forEach(function (r) {
       var actions = el('div', { className: 'row-actions' });
       [['attending', 'Force attending'], ['not_attending', 'Force not attending']].forEach(function (pair) {
         if (r.answer === pair[0] && r.set_by === 'admin') return;
-        var b = el('button', { type: 'button', className: 'button link', text: pair[1] });
+        var b = el('button', { type: 'button', className: 'button secondary small', text: pair[1] });
         b.addEventListener('click', function () { force(r, pair[0]); });
         actions.appendChild(b);
       });
@@ -237,36 +373,44 @@
         clear.addEventListener('click', function () { force(r, null); });
         actions.appendChild(clear);
       }
-      body.appendChild(el('tr', null, [
-        el('td', { 'data-label': 'Member' }, [
-          el('span', { 'data-no-i18n': true, text: r.display_name }),
-          r.is_member ? null : el('span', { className: 'muted small', text: ' (no longer a member)' })
+      var meta = [];
+      if (r.last_changed_at) meta.push(el('span', { 'data-no-i18n': true, text: stampText(r.last_changed_at) }));
+      if (r.set_by) meta.push(el('span', { text: r.set_by === 'admin' ? 'Set by an admin (locked)' : 'Set by the member' }));
+      list.appendChild(el('li', { className: 'reply-row' }, [
+        el('div', { className: 'reply-who' }, [
+          el('span', { className: 'reply-name', 'data-no-i18n': true, text: r.display_name }),
+          r.is_member ? null : el('span', { className: 'muted small', text: '(no longer a member)' })
         ]),
-        el('td', { 'data-label': 'Answer', text: answerLabel(r.answer) }),
-        el('td', { 'data-label': 'Answered', 'data-no-i18n': true, text: r.last_changed_at ? stampFormat.format(new Date(r.last_changed_at)) : '' }),
-        el('td', { 'data-label': 'Set by', text: r.set_by === 'admin' ? 'Admin (locked)' : r.set_by === 'member' ? 'Member' : '' }),
-        el('td', { className: 'actions-cell' }, [actions])
+        el('div', { className: 'reply-answer' }, [
+          el('span', { className: 'answer-badge answer-' + (r.answer || 'none'), text: answerText(r.answer) }),
+          meta.length ? el('span', { className: 'reply-meta muted small' }, meta.reduce(function (acc, n, i) { return acc.concat(i ? [document.createTextNode(' · '), n] : [n]); }, [])) : null
+        ]),
+        actions
       ]));
     });
   }
-  document.getElementById('replies-unanswered').addEventListener('change', renderReplies);
 
   async function force(r, answer) {
     var result = await client.rpc('admin_set_answer', { p_event: replies.event.event_id, p_profile: r.profile_id, p_answer: answer });
-    if (result.error) { fail('Could not set the reply.', result.error); return; }
-    showStatus(answer ? 'Reply set for ' + r.display_name + '. They can no longer change it.' : 'Reply cleared for ' + r.display_name + '.');
+    if (result.error) { fail('Could not set the answer.', result.error); return; }
+    showStatus(answer ? 'Answer set for ' + r.display_name + '. They can no longer change it.' : 'Answer cleared for ' + r.display_name + '.');
     await loadReplies();
-    await loadEvents();
+    loadEvents();
   }
 
   // CSV of the replies, built in the browser (nothing leaves the page)
   document.getElementById('replies-csv').addEventListener('click', function () {
-    var cell = function (v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-    var lines = [['member', 'answer', 'answered_at', 'set_by', 'still_member'].join(',')];
+    var cell = function (v) {
+      v = v == null ? '' : String(v);
+      if (/^[=+\-@\t\r]/.test(v)) v = "'" + v;
+      return /[",;\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    };
+    var head = ['Member', 'Answer', 'Answered', 'Set by', 'Still a member'].map(T);
+    var lines = [head.map(cell).join(';')];
     replies.rows.forEach(function (r) {
-      lines.push([r.display_name, r.answer || '', r.last_changed_at || '', r.set_by || '', r.is_member ? 'yes' : 'no'].map(cell).join(','));
+      lines.push([r.display_name, r.answer ? T(answerText(r.answer)) : '', stampText(r.last_changed_at), r.set_by ? T(r.set_by === 'admin' ? 'Admin' : 'Member') : '', T(r.is_member ? 'Yes' : 'No')].map(cell).join(';'));
     });
-    var blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
     var a = el('a', { href: URL.createObjectURL(blob), download: 'replies-' + replies.event.event_date + '.csv' });
     document.body.appendChild(a);
     a.click();
@@ -275,20 +419,36 @@
 
   // ---- Start ----
 
+  async function loadGroups() {
+    var g = await client.rpc('admin_brigadier_group_options', { p_club: club.id });
+    groups = g.error ? [] : (g.data || []);
+  }
+  async function loadMembers() {
+    var r = await client.from('club_profiles').select('profile_id, profiles(display_name)').eq('club_id', club.id);
+    members = r.error ? [] : (r.data || []).filter(function (x) { return x.profiles; })
+      .map(function (x) { return { id: x.profile_id, name: x.profiles.display_name }; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name); });
+  }
+
   N.guardMembersPage().then(async function (access) {
     if (!access) return;
     club = N.pickClub(access, true);
     if (club.role !== 'admin') {
       var firstAdminClub = (access.clubs || []).find(function (c) { return c.role === 'admin'; });
-      if (!firstAdminClub) { N.showState('not-admin'); return; }
+      // normal members: nothing to see here, back to the member home
+      if (!firstAdminClub) { window.location.replace('index.html'); return; }
       window.location.replace('dinners.html?club=' + encodeURIComponent(firstAdminClub.club_id));
       return;
     }
+    var c = await client.from('clubs').select('timezone').eq('id', club.id).maybeSingle();
+    if (!c.error && c.data && c.data.timezone) tz = c.data.timezone;
+    document.getElementById('deadline-hint').textContent = T('Date and time in the club\'s time zone:') + ' ' + tz.replace('_', ' ') + '.';
     N.setText('[data-slot="club-name"]', club.name);
     N.renderClubPicker(document.getElementById('club-picker'), club);
+    if (!club.isHome) document.title = 'Dinners: ' + club.name + ' · The Nines';
     N.showState('ready');
-    var g = await client.rpc('admin_brigadier_group_options', { p_club: club.id });
-    if (!g.error) { groups = g.data || []; fillGroups(); }
+    show('list');
+    await Promise.all([loadGroups(), loadMembers()]);
     await loadEvents();
   });
 })();

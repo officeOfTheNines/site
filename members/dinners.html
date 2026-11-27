@@ -53,81 +53,105 @@
 
     <div data-state="ready" hidden>
       <div class="page-head">
-        <h1>Dinners of <span data-slot="club-name">the club</span></h1>
-        <div id="club-picker" class="club-picker" hidden></div>
+        <h1>Dinners</h1>
+        <div class="page-head-actions">
+          <div id="club-picker" class="club-picker" hidden></div>
+          <button type="button" class="button" id="add-dinner">Add dinner</button>
+        </div>
       </div>
-      <p class="muted">Plan the club's dinners, open them for replies and see who is coming. Dinners have a date
-        only, no time. Members see a dinner on their home page once its replies are open (or closed); "Not open" dinners stay hidden.</p>
+      <p class="muted small" id="club-line"><span data-slot="club-name" data-no-i18n></span></p>
 
       <div id="dinners-error" class="message error" role="alert"></div>
       <div id="dinners-status" class="message success" role="status" aria-live="polite"></div>
 
-      <section class="panel" aria-labelledby="event-form-heading">
-        <h2 id="event-form-heading">Add a dinner</h2>
-        <form id="event-form" class="event-form" novalidate>
+      <!-- 1. List: upcoming dinners first (soonest first), then past ones (newest first) -->
+      <section id="view-list" aria-label="Dinners">
+        <p id="events-loading" class="muted">Loading…</p>
+        <p id="events-empty" class="panel" hidden>No dinners yet. Press "Add dinner" to plan the first one.</p>
+        <h2 class="admin-dinners-group" id="upcoming-heading" hidden>Upcoming</h2>
+        <ul class="admin-dinners" id="upcoming-list"></ul>
+        <h2 class="admin-dinners-group" id="past-heading" hidden>Past</h2>
+        <ul class="admin-dinners" id="past-list"></ul>
+      </section>
+
+      <!-- 2. Add / edit -->
+      <section id="view-form" class="panel" hidden aria-labelledby="form-heading">
+        <button type="button" class="button link back-link" data-back>← Dinners</button>
+        <h2 id="form-heading">Add a dinner</h2>
+        <form id="event-form" class="dinner-form" novalidate>
           <div class="field">
-            <label for="event-date">Date</label>
+            <label for="event-date">Date <span class="muted">(required)</span></label>
             <input id="event-date" type="date" required>
+            <p id="date-warning" class="message warning" role="status" hidden></p>
           </div>
-          <div class="field">
-            <label for="event-group">Brigadier group</label>
-            <select id="event-group"><option value="">Not chosen yet</option></select>
-          </div>
-          <div class="field venue-field">
-            <label for="venue-query">Venue <span class="muted">(optional)</span></label>
-            <input id="venue-query" type="search" autocomplete="off" spellcheck="false" aria-describedby="venue-hint">
-            <p id="venue-hint" class="hint">Type part of the name, then choose below. Leave empty if not chosen yet.</p>
-            <select id="venue-choice" aria-label="Matching venues" hidden></select>
-          </div>
+
+          <fieldset class="field">
+            <legend>Venue <span class="muted">(optional)</span></legend>
+            <p class="venue-current"><span id="venue-current" data-no-i18n></span>
+              <button type="button" class="button link" id="venue-clear" hidden>Venue to be announced</button></p>
+            <label for="venue-query" class="visually-hidden">Search the venues</label>
+            <input id="venue-query" type="search" autocomplete="off" spellcheck="false" placeholder="Search the venues" aria-describedby="venue-hint">
+            <p id="venue-hint" class="hint">Type part of the name and choose it below. Without a venue the dinner shows no pin on the map.</p>
+            <ul id="venue-results" class="venue-results" hidden></ul>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>Brigadiers <span class="muted">(optional)</span></legend>
+            <label for="event-group" class="visually-hidden">Brigadier group</label>
+            <select id="event-group"></select>
+            <div id="new-group" class="new-group" hidden>
+              <div class="field">
+                <label for="new-group-1">Member 1</label>
+                <select id="new-group-1"></select>
+              </div>
+              <div class="field">
+                <label for="new-group-2">Member 2</label>
+                <select id="new-group-2"></select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="field">
+            <legend>Replies</legend>
+            <label for="event-status" class="visually-hidden">Replies status</label>
+            <select id="event-status">
+              <option value="not_open">Not open</option>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+            </select>
+            <p id="open-hint" class="hint open-hint" hidden>Members will see this dinner on their home page</p>
+            <div class="field">
+              <label for="event-deadline">Reply deadline <span class="muted">(optional)</span></label>
+              <input id="event-deadline" type="datetime-local" aria-describedby="deadline-hint">
+              <p id="deadline-hint" class="hint"></p>
+            </div>
+          </fieldset>
+
           <div class="form-end">
             <button type="submit" class="button" id="event-save">Add dinner</button>
-            <button type="button" class="button secondary" id="event-cancel" hidden>Cancel editing</button>
+            <button type="button" class="button secondary" data-back>Cancel</button>
+            <button type="button" class="button danger" id="event-close" hidden>Close dinner</button>
           </div>
         </form>
       </section>
 
-      <section class="panel" aria-labelledby="events-heading">
-        <div class="section-head">
-          <h2 id="events-heading">Dinners</h2>
-          <label class="check"><input id="show-past" type="checkbox"> <span>Show all past dinners</span></label>
-        </div>
-        <p id="events-loading" class="muted">Loading…</p>
-        <table class="allowlist" id="events-table" hidden>
-          <thead>
-            <tr>
-              <th scope="col">Date</th>
-              <th scope="col">Venue</th>
-              <th scope="col">Brigadiers</th>
-              <th scope="col">Replies</th>
-              <th scope="col">Deadline</th>
-              <th scope="col">Answers</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="events-body"></tbody>
-        </table>
-      </section>
-
-      <section id="replies" class="panel" hidden aria-labelledby="replies-heading">
+      <!-- 3. Replies -->
+      <section id="view-replies" class="panel" hidden aria-labelledby="replies-heading">
+        <button type="button" class="button link back-link" data-back>← Dinners</button>
         <div class="section-head">
           <h2 id="replies-heading">Replies</h2>
           <button type="button" class="button secondary" id="replies-csv">Export CSV</button>
         </div>
         <p id="replies-dinner" class="muted" data-no-i18n></p>
-        <p id="replies-totals"></p>
-        <label class="check"><input id="replies-unanswered" type="checkbox"> <span>No answer yet only</span></label>
-        <table class="allowlist" id="replies-table">
-          <thead>
-            <tr>
-              <th scope="col">Member</th>
-              <th scope="col">Answer</th>
-              <th scope="col">Answered</th>
-              <th scope="col">Set by</th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="replies-body"></tbody>
-        </table>
+        <ul class="reply-totals" id="replies-totals"></ul>
+        <div class="reply-filter" role="radiogroup" aria-label="Show" id="replies-filter">
+          <button type="button" role="radio" class="toggle-btn" data-filter="all" aria-checked="true">All</button>
+          <button type="button" role="radio" class="toggle-btn" data-filter="attending" aria-checked="false">Attending</button>
+          <button type="button" role="radio" class="toggle-btn" data-filter="not_attending" aria-checked="false">Not attending</button>
+          <button type="button" role="radio" class="toggle-btn" data-filter="none" aria-checked="false">No answer yet</button>
+        </div>
+        <ul class="reply-list" id="replies-list"></ul>
+        <p class="muted small">A forced answer is locked: the member can no longer change it. "Clear" removes the answer, and the member can reply again.</p>
       </section>
     </div>
   </main>
@@ -140,6 +164,7 @@
   <script src="../js/site.js"></script>
   <script src="../js/auth.js"></script>
   <script src="../js/club-switch.js"></script>
+  <script src="../js/people.js"></script>
   <script src="../js/dinners.js"></script>
 </body>
 </html>
