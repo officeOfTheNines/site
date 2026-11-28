@@ -1006,6 +1006,20 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .dc-name { margin: 8px 0; font-family: var(--font-title); font-weight: 600; font-size: 1.9rem; line-height: 1.1; color: var(--text); }
 .dc-address { margin: 0; color: var(--muted); font-size: 0.875rem; line-height: 1.5; }
 .dc-brigadiers { margin: 6px 0 0; color: var(--text); font-size: 0.875rem; font-weight: 500; }
+/* Who attended (past dinners): short names wrapped as a comma-free list of small chips */
+.dc-attendees { margin: 14px 0 4px; }
+.dc-attendees-title { margin-bottom: 8px; }
+.dc-attendee-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dc-attendee-list li {
+  padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text); font-size: 0.8125rem; line-height: 1.4; white-space: nowrap;
+}
+.dc-attendee-list li[hidden] { display: none; }
+.dc-attendees-toggle {
+  margin-top: 8px; padding: 6px 0; min-height: 32px; border: 0; background: none; cursor: pointer;
+  color: var(--brass); font: inherit; font-size: 0.8125rem; font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+}
+.dc-attendees-toggle:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
 .dc-score-block {
   display: flex; align-items: flex-end; justify-content: space-between; gap: 12px;
   margin: 18px 0 14px; padding: 14px 0 12px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
@@ -1202,6 +1216,33 @@ input[type="date"]:focus-visible, input[type="datetime-local"]:focus-visible { b
 .open-hint { color: var(--brass); }
 .reply-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
 .reply-list { list-style: none; margin: 0 0 12px; padding: 0; }
+/* Attendees of a past dinner (admin): chosen people as removable chips, then a name search */
+.attendees-count { margin: 14px 0 8px; font-weight: 600; }
+#view-attendees .form-end { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 4px 0 12px; }
+.attendee-chips { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.attendee-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 4px 4px 12px;
+  border: 1px solid var(--border); border-radius: 999px; font-size: 0.9rem;
+}
+.chip-remove {
+  width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  color: var(--muted); font-size: 1.2rem; line-height: 1;
+}
+.chip-remove:hover, .chip-remove:focus-visible { color: var(--text); background: var(--border); }
+.chip-remove:focus-visible { outline: 3px solid var(--brass); outline-offset: 1px; }
+.attendee-results { list-style: none; margin: 6px 0 16px; padding: 0; }
+.attendee-results:empty { display: none; }
+.attendee-results > li { border: 1px solid var(--border); border-top-width: 0; padding: 0; }
+.attendee-results > li:first-child { border-top-width: 1px; border-radius: var(--radius) var(--radius) 0 0; }
+.attendee-results > li:last-child { border-radius: 0 0 var(--radius) var(--radius); }
+.attendee-results > li:only-child { border-radius: var(--radius); }
+.attendee-results > li.muted { padding: 10px 12px; }
+.attendee-add {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 8px 12px;
+  border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+.attendee-add:hover, .attendee-add:focus-visible { background: rgba(200, 163, 95, 0.12); }
+.attendee-add-plus { margin-left: auto; color: var(--brass); font-size: 1.25rem; font-weight: 600; }
 .reply-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .reply-name { font-weight: 600; overflow-wrap: anywhere; }
 .reply-answer { display: flex; flex-direction: column; gap: 2px; }
