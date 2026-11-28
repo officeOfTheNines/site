@@ -10,7 +10,8 @@
 //   venue search .................... admin_venue_options(query)
 //   brigadier groups ................ admin_brigadier_group_options(club); a new one: admin_save_brigadier_group
 //   force / clear an answer ......... admin_set_answer(dinner, member, answer or null)
-// Nothing is ever deleted from here.
+//   past dinners: who attended ...... admin_past_attendee_options(dinner); save: admin_save_past_attendees(dinner, ids)
+// Nothing else is ever deleted from here (saving attendees takes the people left out off that dinner's list).
 (function () {
   'use strict';
 
@@ -35,10 +36,12 @@
   var editing = null;        // the dinner being edited, or null when adding
   var chosenVenue = null;    // { id, name } or null = venue to be announced
   var replies = { event: null, rows: [], filter: 'all' };
+  var att = { event: null, people: [], chosen: {}, saved: '' };   // the past dinner whose attendees are edited
 
   var errorBox = document.getElementById('dinners-error');
   var statusBox = document.getElementById('dinners-status');
-  var views = { list: document.getElementById('view-list'), form: document.getElementById('view-form'), replies: document.getElementById('view-replies') };
+  var views = { list: document.getElementById('view-list'), form: document.getElementById('view-form'), replies: document.getElementById('view-replies'),
+                attendees: document.getElementById('view-attendees') };
   var form = document.getElementById('event-form');
   var dateInput = document.getElementById('event-date');
   var dateWarning = document.getElementById('date-warning');
@@ -150,6 +153,11 @@
     repliesButton.addEventListener('click', function () { openReplies(ev); });
     var editButton = el('button', { type: 'button', className: 'button secondary', text: 'Edit' });
     editButton.addEventListener('click', function () { openForm(ev); });
+    var attendeesButton = null;
+    if (!upcoming) {
+      attendeesButton = el('button', { type: 'button', className: 'button secondary', text: 'Attendees' });
+      attendeesButton.addEventListener('click', function () { openAttendees(ev); });
+    }
     return el('li', { className: 'admin-dinner' + (upcoming ? '' : ' is-past') }, [
       el('div', { className: 'admin-dinner-head' }, [
         el('p', { className: 'admin-dinner-date', 'data-no-i18n': true, text: dayText(ev.event_date) }),
@@ -163,8 +171,8 @@
         count('Attending', String(ev.attending)),
         count('Not attending', String(ev.not_attending)),
         count('No answer', ev.no_answer === undefined ? '…' : String(ev.no_answer), ev.event_id)
-      ]) : null,
-      el('div', { className: 'row-actions' }, [repliesButton, editButton])
+      ]) : el('ul', { className: 'admin-dinner-counts' }, [count('Attendees', String(ev.attending || 0))]),
+      el('div', { className: 'row-actions' }, [attendeesButton, repliesButton, editButton])
     ]);
   }
 
@@ -415,6 +423,92 @@
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  });
+
+  // ---- 4. Attendees of a past dinner ----
+  // Pick from the club's people (current members first; former members can be added too, they were
+  // there). Saved as one list: admin_save_past_attendees makes the dinner's attendees exactly these.
+
+  var attChosen = document.getElementById('attendees-chosen');
+  var attQuery = document.getElementById('attendees-query');
+  var attResults = document.getElementById('attendees-results');
+  var attCount = document.getElementById('attendees-count');
+  var attSave = document.getElementById('attendees-save');
+  var fold = function (t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); };
+  var byName = function (a, b) { return a.display_name.localeCompare(b.display_name, fr ? 'fr' : 'en-GB', { sensitivity: 'base' }); };
+  function chosenIds() { return Object.keys(att.chosen).filter(function (k) { return att.chosen[k]; }).sort(); }
+
+  async function openAttendees(ev) {
+    att = { event: ev, people: [], chosen: {}, saved: '' };
+    showError(''); showStatus('');
+    document.getElementById('attendees-dinner').textContent = dayText(ev.event_date) + ' · ' + (ev.venue_name || T('Venue to be announced'));
+    attQuery.value = '';
+    attChosen.replaceChildren();
+    attResults.replaceChildren();
+    attCount.textContent = '';
+    show('attendees');
+    var result = await client.rpc('admin_past_attendee_options', { p_event: ev.event_id });
+    if (result.error) { fail('Could not load the members.', result.error); return; }
+    att.people = (result.data || []).slice().sort(byName);
+    att.people.forEach(function (p) { if (p.attending) att.chosen[p.profile_id] = true; });
+    att.saved = chosenIds().join();
+    renderAttendees();
+  }
+
+  function renderAttendees() {
+    var chosen = att.people.filter(function (p) { return att.chosen[p.profile_id]; });
+    attCount.textContent = chosen.length === 1 ? '1 attendee' : chosen.length + ' attendees';
+    attChosen.replaceChildren.apply(attChosen, chosen.map(function (p) {
+      var remove = el('button', { type: 'button', className: 'chip-remove', 'aria-label': 'Remove ' + p.display_name, title: 'Remove ' + p.display_name, text: '×' });
+      remove.addEventListener('click', function () { att.chosen[p.profile_id] = false; renderAttendees(); attQuery.focus(); });
+      return el('li', { className: 'attendee-chip' }, [
+        el('span', { 'data-no-i18n': true, text: p.display_name }),
+        p.is_member ? null : el('span', { className: 'muted small', text: '(no longer a member)' }),
+        remove
+      ]);
+    }));
+    var changed = chosenIds().join() !== att.saved;
+    attSave.disabled = !changed;
+    renderAttendeeResults();
+  }
+
+  function renderAttendeeResults() {
+    var q = fold(attQuery.value.trim());
+    attResults.replaceChildren();
+    if (!q) return;
+    var found = att.people.filter(function (p) {
+      return !att.chosen[p.profile_id] && fold(p.display_name).split(/\s+/).concat([fold(p.display_name)]).some(function (w) { return w.indexOf(q) === 0; });
+    }).sort(function (a, b) { return (b.is_member - a.is_member) || byName(a, b); }).slice(0, 8);
+    if (!found.length) { attResults.appendChild(el('li', { className: 'muted small', text: 'No member matches.' })); return; }
+    found.forEach(function (p) {
+      var b = el('button', { type: 'button', className: 'attendee-add' }, [
+        el('span', { 'data-no-i18n': true, text: p.display_name }),
+        p.is_member ? null : el('span', { className: 'muted small', text: '(no longer a member)' }),
+        el('span', { className: 'attendee-add-plus', 'aria-hidden': 'true', text: '+' })
+      ]);
+      b.setAttribute('aria-label', T('Add') + ' ' + p.display_name);
+      b.addEventListener('click', function () { att.chosen[p.profile_id] = true; attQuery.value = ''; renderAttendees(); attQuery.focus(); });
+      attResults.appendChild(el('li', null, [b]));
+    });
+  }
+  attQuery.addEventListener('input', renderAttendeeResults);
+  attQuery.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var first = attResults.querySelector('.attendee-add');
+    if (first) first.click();
+  });
+
+  attSave.addEventListener('click', async function () {
+    attSave.disabled = true;
+    var ids = chosenIds();
+    var result = await client.rpc('admin_save_past_attendees', { p_event: att.event.event_id, p_profile_ids: ids });
+    if (result.error) { attSave.disabled = false; fail('Could not save the attendees.', result.error); return; }
+    att.saved = ids.join();
+    att.event.attending = result.data;
+    renderAttendees();
+    showStatus(result.data === 1 ? 'Saved: 1 attendee.' : 'Saved: ' + result.data + ' attendees.');
+    loadEvents();
   });
 
   // ---- Start ----

@@ -64,6 +64,29 @@
       href: 'recos.html?view=dinners&dinner=' + encodeURIComponent(row.event_id) + '&club=' + encodeURIComponent(club.club_id) });
   }
 
+  // Brigadiers of this dinner only: how many replied yes / no, and how many members have not replied.
+  // Counts only, from dinner_tally (the database answers only for the dinner's brigadier group, before
+  // the dinner); for everyone else it returns nothing and the box stays hidden.
+  function tallyBox(row) {
+    var box = el('div', { className: 'dinner-tally' });
+    box.hidden = true;
+    if (!row.event_id) return box;
+    N.client.rpc('dinner_tally', { p_event: row.event_id }).then(function (r) {
+      var t = !r.error && r.data && r.data[0];
+      if (!t) return;
+      var item = function (label, n) {
+        return el('li', null, [el('strong', { 'data-no-i18n': true, text: String(n) }), document.createTextNode(' '), el('span', { text: label })]);
+      };
+      box.replaceChildren(
+        el('p', { className: 'dinner-label muted', text: 'Replies so far' }),
+        el('ul', { className: 'dinner-tally-counts' }, [item('Attending', t.attending), item('Not attending', t.not_attending), item('No answer', t.no_answer)]),
+        el('p', { className: 'muted small', text: 'Only the brigadiers of this dinner see this.' })
+      );
+      box.hidden = false;
+    }, function () { /* nothing shown */ });
+    return box;
+  }
+
   async function renderPanel(club, row, showClub) {
     var section = el('section', { className: 'panel dinner-panel', 'aria-label': 'Next dinner' });
     if (showClub) section.appendChild(el('p', { className: 'dinner-club muted', 'data-no-i18n': true, text: club.name }));
@@ -86,6 +109,7 @@
       section.appendChild(el('p', { className: 'dinner-label muted', text: 'Brigadiers' }));
       section.appendChild(await brigadierFaces(row.brigadiers));
     }
+    section.appendChild(tallyBox(row));
 
     // The member's own reply only (never anyone else's). Every rule comes from the database:
     //   can_answer        the reply button works now (replies open, before the deadline, not locked, and

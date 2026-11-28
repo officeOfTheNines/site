@@ -1073,6 +1073,7 @@
     } else {
       card.appendChild(el('p', { className: 'dc-tbc' + (first ? ' peek-end' : ''), text: 'Ratings coming soon' }));
     }
+    card.appendChild(attendeesSlot(d));   // filled when the server has a list (past dinners only)
     // the newest dinner's card: Directions (gold) next to View menu
     var buttons = first && go ? el('div', { className: 'dc-actions' }, [go.directions]) : null;
     if (d.menu_url) {
@@ -1083,6 +1084,60 @@
     if (buttons) card.appendChild(buttons);
     if (!d.menu_url && first) card.appendChild(el('p', { className: 'dc-no-menu', text: 'Menu not yet available' }));
     return card;
+  }
+
+  // ---- Who attended (past dinners only) ----
+  // past_dinner_attendees(event) answers only for a past dinner of a club the member belongs to: short
+  // names ("Jean-Baptiste S.") of the people marked attending, and the count. Upcoming dinners, other
+  // clubs and dinners with no list recorded give nothing, and then the card shows nothing.
+  var ATTENDEES_SHOWN = 12;      // a long list shows this many, then "Show all"
+  var attendeesCache = {};       // event id -> { names: [...], count } (or null: nothing to show)
+  function loadAttendees(eventId) {
+    if (Object.prototype.hasOwnProperty.call(attendeesCache, eventId)) return Promise.resolve(attendeesCache[eventId]);
+    return client.rpc('past_dinner_attendees', { p_event: eventId }).then(function (result) {
+      if (result.error) return null;   // not stored: tried again next time the card opens
+      var rows = result.data || [];
+      var out = rows.length ? { names: rows.map(function (r) { return r.short_name; }).sort(collator.compare), count: rows[0].attendee_count || rows.length } : null;
+      attendeesCache[eventId] = out;
+      return out;
+    }, function () { return null; });
+  }
+  function fillAttendees(slot, a) {
+    var list = el('ul', { className: 'dc-attendee-list', 'data-no-i18n': true });
+    a.names.forEach(function (name, i) {
+      var li = el('li', { text: name });
+      if (i >= ATTENDEES_SHOWN) { li.hidden = true; li.classList.add('dc-attendee-more'); }
+      list.appendChild(li);
+    });
+    slot.replaceChildren(el('p', { className: 'dc-eyebrow dc-attendees-title', text: 'Attendees (' + a.count + ')' }), list);
+    if (a.names.length > ATTENDEES_SHOWN) {
+      var more = el('button', { type: 'button', className: 'dc-attendees-toggle', 'aria-expanded': 'false', text: 'Show all' });
+      more.addEventListener('click', function () {
+        var open = more.getAttribute('aria-expanded') !== 'true';
+        more.setAttribute('aria-expanded', String(open));
+        more.textContent = open ? 'Show less' : 'Show all';
+        list.querySelectorAll('.dc-attendee-more').forEach(function (li) { li.hidden = !open; });
+        refitPopup();
+      });
+      slot.appendChild(more);
+    }
+    slot.hidden = false;
+  }
+  function attendeesSlot(d) {
+    var slot = el('div', { className: 'dc-attendees' });
+    slot.hidden = true;
+    var cached = attendeesCache[d.event_id];
+    if (cached) { fillAttendees(slot, cached); return slot; }
+    loadAttendees(d.event_id).then(function (a) {
+      if (!a || !slot.isConnected) return;
+      fillAttendees(slot, a);
+      refitPopup();
+    });
+    return slot;
+  }
+  // a desktop popup that grew (names arrived, or "Show all"): let Leaflet resize and place it again
+  function refitPopup() {
+    if (selected && selected.isPopupOpen && selected.isPopupOpen()) selected.getPopup().update();
   }
 
   function venuePopup(v) {

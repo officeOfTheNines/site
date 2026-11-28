@@ -153,6 +153,23 @@
         <ul class="reply-list" id="replies-list"></ul>
         <p class="muted small">A forced answer is locked: the member can no longer change it. "Clear" removes the answer, and the member can reply again.</p>
       </section>
+
+      <section id="view-attendees" class="panel" hidden aria-labelledby="attendees-heading">
+        <button type="button" class="button link back-link" data-back>← Dinners</button>
+        <h2 id="attendees-heading">Attendees</h2>
+        <p id="attendees-dinner" class="muted" data-no-i18n></p>
+        <p class="muted small">Every member of the club sees these names (first name and initial) on this dinner's card.</p>
+        <p class="attendees-count" id="attendees-count" aria-live="polite"></p>
+        <ul class="attendee-chips" id="attendees-chosen" aria-label="Attendees"></ul>
+        <label for="attendees-query">Add a member</label>
+        <input type="search" id="attendees-query" autocomplete="off" placeholder="Search by name" aria-controls="attendees-results">
+        <ul class="attendee-results" id="attendees-results" aria-label="Members found"></ul>
+        <div class="form-end">
+          <button type="button" class="button" id="attendees-save">Save attendees</button>
+          <button type="button" class="button secondary" data-back>Cancel</button>
+        </div>
+        <p class="muted small">Removing someone only takes them off this list. Replies "Not attending" are kept.</p>
+      </section>
     </div>
   </main>
 
