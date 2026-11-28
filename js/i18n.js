@@ -365,6 +365,8 @@
     'To change your answer, please contact us directly.': 'Pour modifier votre réponse, merci de nous contacter directement.',
     'No reply recorded. Please contact us directly.': 'Aucune réponse enregistrée. Merci de nous contacter directement.',
     'No answer': 'Sans réponse',
+    'Replies so far': 'Réponses à ce jour',
+    'Only the brigadiers of this dinner see this.': 'Seuls les brigadiers de ce dîner voient ceci.',
     'Upcoming': 'À venir',
     'Past': 'Passés',
     'Edit the dinner': 'Modifier le dîner',
